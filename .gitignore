@@ -1,0 +1,20 @@
+# Gradle & Build files
+.gradle/
+build/
+*/build/
+app/build/
+
+# Local configuration
+local.properties
+
+# IDE & Editor files
+.idea/
+*.iml
+.DS_Store
+
+# Output APK/AAB packages
+*.apk
+*.aab
+
+# System logs & temporary files
+*.log
