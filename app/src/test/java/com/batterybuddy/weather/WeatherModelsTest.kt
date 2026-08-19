@@ -48,4 +48,11 @@ class WeatherModelsTest {
         assertFalse(blockedStrike)
         assertTrue(nextStrike)
     }
+
+    @Test
+    fun `lightning chances are visible enough for rainy weather`() {
+        assertEquals(0.04f, LightningPolicy.strikeChance(WeatherCondition.RAIN))
+        assertEquals(0.10f, LightningPolicy.strikeChance(WeatherCondition.HEAVY_RAIN))
+        assertEquals(0.25f, LightningPolicy.strikeChance(WeatherCondition.STORM))
+    }
 }

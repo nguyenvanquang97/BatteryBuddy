@@ -43,10 +43,10 @@ object LightningPolicy {
     const val COOLDOWN_MS = 60_000L
 
     fun strikeChance(condition: WeatherCondition): Float = when (condition) {
-        WeatherCondition.STORM -> 0.05f
-        WeatherCondition.HEAVY_RAIN -> 0.01f
+        WeatherCondition.STORM -> 0.25f
+        WeatherCondition.HEAVY_RAIN -> 0.10f
         WeatherCondition.RAIN,
-        WeatherCondition.WIND -> 0.002f
+        WeatherCondition.WIND -> 0.04f
         else -> 0f
     }
 

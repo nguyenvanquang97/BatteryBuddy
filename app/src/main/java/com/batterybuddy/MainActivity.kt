@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.location.Geocoder
 import android.location.LocationManager
 import android.net.Uri
 import android.os.BatteryManager
@@ -41,6 +42,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,8 +70,17 @@ import com.batterybuddy.pet.PetBehaviorState
 import com.batterybuddy.service.OverlayService
 import com.batterybuddy.ui.theme.BatteryBuddyTheme
 import com.batterybuddy.weather.WeatherCondition
+import com.batterybuddy.weather.WeatherRepository
+import com.batterybuddy.weather.WeatherSnapshot
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.coroutines.resume
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
@@ -94,9 +105,14 @@ fun MainScreen() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val preferencesRepository = remember { PreferencesRepository(context) }
+    val weatherRepository = remember { WeatherRepository() }
     val preferences by preferencesRepository.overlayPreferencesFlow.collectAsState(
         initial = OverlayPreferences()
     )
+    var weatherSnapshot by remember { mutableStateOf<WeatherSnapshot?>(null) }
+    var weatherError by remember { mutableStateOf<String?>(null) }
+    var weatherLocationName by remember { mutableStateOf("Khu vực đã lưu") }
+    var weatherRefreshKey by remember { mutableStateOf(0) }
 
     // Dynamic Screen Width in Pixels
     val screenWidthPx = remember(context) { context.resources.displayMetrics.widthPixels }
@@ -170,6 +186,37 @@ fun MainScreen() {
     }
 
     val currentCharacterState = CharacterStateMapper.map(batteryState)
+    val weatherLatitude = preferences.weatherLatitudeE6 / 1_000_000.0
+    val weatherLongitude = preferences.weatherLongitudeE6 / 1_000_000.0
+
+    LaunchedEffect(weatherLatitude, weatherLongitude) {
+        weatherLocationName = resolveApproximatePlaceName(
+            context = context,
+            latitude = weatherLatitude,
+            longitude = weatherLongitude
+        )
+    }
+
+    LaunchedEffect(preferences.weatherEnabled, weatherLatitude, weatherLongitude, weatherRefreshKey) {
+        if (!preferences.weatherEnabled) {
+            weatherSnapshot = null
+            weatherError = null
+            return@LaunchedEffect
+        }
+
+        weatherError = null
+        runCatching {
+            weatherRepository.getCurrentWeather(
+                latitude = weatherLatitude,
+                longitude = weatherLongitude,
+                forceRefresh = weatherRefreshKey > 0
+            )
+        }.onSuccess {
+            weatherSnapshot = it
+        }.onFailure {
+            weatherError = "Chưa lấy được thời tiết"
+        }
+    }
 
     Scaffold { paddingValues ->
         Column(
@@ -422,7 +469,7 @@ fun MainScreen() {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Bật thời tiết thực", fontSize = 15.sp)
+                Text("Dùng thời tiết hiện tại", fontSize = 15.sp)
                 Switch(
                     checked = preferences.weatherEnabled,
                     onCheckedChange = {
@@ -431,13 +478,11 @@ fun MainScreen() {
                 )
             }
 
-            Text(
-                text = "Vị trí: %.4f, %.4f".format(
-                    preferences.weatherLatitudeE6 / 1_000_000.0,
-                    preferences.weatherLongitudeE6 / 1_000_000.0
-                ),
-                fontSize = 13.sp,
-                modifier = Modifier.fillMaxWidth()
+            WeatherSummary(
+                enabled = preferences.weatherEnabled,
+                locationName = weatherLocationName,
+                snapshot = weatherSnapshot,
+                errorMessage = weatherError
             )
 
             Row(
@@ -462,17 +507,18 @@ fun MainScreen() {
                 }
                 OutlinedButton(
                     onClick = {
+                        weatherRefreshKey += 1
                         sendOverlayCommand(context, OverlayService.ACTION_REFRESH_WEATHER)
                     },
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Refresh", fontSize = 12.sp)
+                    Text("Cập nhật", fontSize = 12.sp)
                 }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = "Test Môi Trường",
+                text = "Thử Thời Tiết",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.fillMaxWidth()
@@ -494,7 +540,7 @@ fun MainScreen() {
                             },
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text(condition.name, fontSize = 10.sp)
+                            Text(condition.vietnameseName(), fontSize = 10.sp)
                         }
                     }
                     if (rowConditions.size == 1) Spacer(modifier = Modifier.weight(1f))
@@ -692,6 +738,59 @@ fun MainScreen() {
     }
 }
 
+@Composable
+private fun WeatherSummary(
+    enabled: Boolean,
+    locationName: String,
+    snapshot: WeatherSnapshot?,
+    errorMessage: String?
+) {
+    val summary = when {
+        !enabled -> "Đang tắt"
+        snapshot != null -> "${snapshot.condition.vietnameseName()} • ${snapshot.temperatureC.roundToInt()}°C"
+        errorMessage != null -> errorMessage
+        else -> "Đang cập nhật..."
+    }
+    val details = snapshot?.let {
+        "Mưa ${formatOneDecimal(it.precipitationMm)} mm • Gió ${it.windSpeedKmh.roundToInt()} km/h • ${formatWeatherUpdateTime(it.fetchedAtMs)}"
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp)
+        ) {
+            Text(
+                text = "Địa điểm: $locationName",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Thời tiết: $summary",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium
+            )
+            if (details != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = details,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
 private fun requestOverlayPermission(context: Context) {
     val intent = Intent(
         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -755,4 +854,57 @@ private fun saveApproximateWeatherLocation(
         preferencesRepository.updateWeatherLocation(location.latitude, location.longitude)
     }
     Toast.makeText(context, "Weather location updated", Toast.LENGTH_SHORT).show()
+}
+
+private suspend fun resolveApproximatePlaceName(
+    context: Context,
+    latitude: Double,
+    longitude: Double
+): String = withContext(Dispatchers.IO) {
+    runCatching {
+        if (!Geocoder.isPresent()) return@runCatching null
+        val address = Geocoder(context, Locale("vi", "VN"))
+            .getFirstAddress(latitude, longitude)
+
+        listOfNotNull(
+            address?.subLocality,
+            address?.locality ?: address?.subAdminArea,
+            address?.adminArea
+        )
+            .distinct()
+            .joinToString(", ")
+            .ifBlank { null }
+    }.getOrNull() ?: "Khu vực đã lưu"
+}
+
+private suspend fun Geocoder.getFirstAddress(latitude: Double, longitude: Double) =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        suspendCancellableCoroutine { continuation ->
+            getFromLocation(latitude, longitude, 1) { addresses ->
+                if (continuation.isActive) {
+                    continuation.resume(addresses.firstOrNull())
+                }
+            }
+        }
+    } else {
+        @Suppress("DEPRECATION")
+        getFromLocation(latitude, longitude, 1)?.firstOrNull()
+    }
+
+private fun WeatherCondition.vietnameseName(): String = when (this) {
+    WeatherCondition.CLEAR -> "Quang đãng"
+    WeatherCondition.CLOUDY -> "Nhiều mây"
+    WeatherCondition.RAIN -> "Mưa"
+    WeatherCondition.HEAVY_RAIN -> "Mưa lớn"
+    WeatherCondition.WIND -> "Gió mạnh"
+    WeatherCondition.STORM -> "Dông bão"
+    WeatherCondition.SNOW -> "Tuyết"
+}
+
+private fun formatOneDecimal(value: Double): String =
+    String.format(Locale.US, "%.1f", value)
+
+private fun formatWeatherUpdateTime(timestampMs: Long): String {
+    val formatter = SimpleDateFormat("HH:mm", Locale("vi", "VN"))
+    return "Cập nhật ${formatter.format(Date(timestampMs))}"
 }
