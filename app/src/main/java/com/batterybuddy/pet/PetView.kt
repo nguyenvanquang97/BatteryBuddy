@@ -14,7 +14,6 @@ import android.util.AttributeSet
 import android.view.View
 import android.view.animation.LinearInterpolator
 import com.batterybuddy.battery.BatteryState
-import com.batterybuddy.weather.WeatherCondition
 import kotlin.math.PI
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -45,12 +44,6 @@ class PetView @JvmOverloads constructor(
             invalidate()
         }
 
-    var weatherCondition: WeatherCondition = WeatherCondition.CLEAR
-        set(value) {
-            field = value
-            invalidate()
-        }
-
     var isFacingRight: Boolean = true
         set(value) {
             if (field != value) {
@@ -74,10 +67,6 @@ class PetView @JvmOverloads constructor(
         }
 
     private val spritePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-    private val weatherPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
-    }
 
     private val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#4A90E2")
@@ -212,8 +201,6 @@ class PetView @JvmOverloads constructor(
         val frames = spriteFrames.getValue(behaviorState)
         val frame = frames[frameIndex(frames.size)]
 
-        drawWeatherEffects(canvas, density)
-
         canvas.save()
         // Source sprites face left, so mirror them while the pet moves right.
         if (isFacingRight) {
@@ -331,56 +318,6 @@ class PetView @JvmOverloads constructor(
         PetBehaviorState.SHOCKED -> SHOCKED_ANIMATION_DURATION_MS
         PetBehaviorState.POKE_JUMP -> POKE_JUMP_ANIMATION_DURATION_MS
         PetBehaviorState.ANGRY_LOOK -> ANGRY_LOOK_ANIMATION_DURATION_MS
-    }
-
-    private fun drawWeatherEffects(canvas: Canvas, density: Float) {
-        when (weatherCondition) {
-            WeatherCondition.RAIN -> drawRain(canvas, density, 6)
-            WeatherCondition.HEAVY_RAIN -> drawRain(canvas, density, 10)
-            WeatherCondition.STORM -> {
-                drawRain(canvas, density, 12)
-                drawWind(canvas, density)
-            }
-            WeatherCondition.WIND -> drawWind(canvas, density)
-            WeatherCondition.SNOW -> drawSnow(canvas, density)
-            WeatherCondition.CLEAR,
-            WeatherCondition.CLOUDY -> Unit
-        }
-
-    }
-
-    private fun drawRain(canvas: Canvas, density: Float, count: Int) {
-        weatherPaint.color = Color.parseColor("#709BD7FF")
-        weatherPaint.strokeWidth = 1.2f * density
-        repeat(count) { index ->
-            val phase = (animationProgress + index * 0.17f) % 1f
-            val x = spriteRect.left + spriteRect.width() * ((index * 0.37f) % 1f)
-            val y = spriteRect.top + spriteRect.height() * phase
-            canvas.drawLine(x, y, x - 3f * density, y + 8f * density, weatherPaint)
-        }
-    }
-
-    private fun drawWind(canvas: Canvas, density: Float) {
-        weatherPaint.color = Color.parseColor("#80D8F3FF")
-        weatherPaint.strokeWidth = density
-        repeat(3) { index ->
-            val phase = (animationProgress + index * 0.31f) % 1f
-            val x = spriteRect.left + spriteRect.width() * phase
-            val y = spriteRect.top + spriteRect.height() * (0.25f + index * 0.2f)
-            canvas.drawLine(x, y, x + 13f * density, y, weatherPaint)
-        }
-    }
-
-    private fun drawSnow(canvas: Canvas, density: Float) {
-        weatherPaint.color = Color.WHITE
-        weatherPaint.style = Paint.Style.FILL
-        repeat(7) { index ->
-            val phase = (animationProgress + index * 0.19f) % 1f
-            val x = spriteRect.left + spriteRect.width() * ((index * 0.41f) % 1f)
-            val y = spriteRect.top + spriteRect.height() * phase
-            canvas.drawCircle(x, y, 1.5f * density, weatherPaint)
-        }
-        weatherPaint.style = Paint.Style.STROKE
     }
 
     companion object {

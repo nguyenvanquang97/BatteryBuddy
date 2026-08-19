@@ -64,6 +64,7 @@ class OverlayService : Service() {
 
     private var currentBatteryState = BatteryState()
     private var currentPreferences = OverlayPreferences()
+    private var currentWeatherCondition = WeatherCondition.CLEAR
 
     companion object {
         private const val NOTIFICATION_ID = 1001
@@ -80,6 +81,7 @@ class OverlayService : Service() {
         const val EXTRA_EVENT = "event"
         private const val WEATHER_REFRESH_INTERVAL_MS = 30 * 60 * 1000L
         private const val EVENT_REFRESH_INTERVAL_MS = 15 * 60 * 1000L
+        private const val MAX_VALID_CUTOUT_WIDTH_FRACTION = 0.45f
     }
 
     private val batteryReceiver = object : BroadcastReceiver() {
@@ -226,7 +228,8 @@ class OverlayService : Service() {
 
         if (!currentPreferences.weatherEnabled) {
             petAIController.updateWeather(null)
-            petView?.weatherCondition = WeatherCondition.CLEAR
+            currentWeatherCondition = WeatherCondition.CLEAR
+            eventEnvironmentView?.weatherCondition = WeatherCondition.CLEAR
             return
         }
 
@@ -290,7 +293,8 @@ class OverlayService : Service() {
 
     private fun applyWeather(snapshot: WeatherSnapshot) {
         petAIController.updateWeather(snapshot)
-        petView?.weatherCondition = snapshot.condition
+        currentWeatherCondition = snapshot.condition
+        eventEnvironmentView?.weatherCondition = snapshot.condition
     }
 
     private fun showBoundaryHighlight(minX: Int, maxX: Int) {
@@ -465,6 +469,7 @@ class OverlayService : Service() {
             windowManager?.addView(view, params)
             eventEnvironmentView = view
             eventOverlayParams = params
+            view.weatherCondition = currentWeatherCondition
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -473,6 +478,7 @@ class OverlayService : Service() {
     private fun applyPreferencesToOverlay() {
         val environment = EventEnvironmentResolver.resolve(currentPreferences.eventMode)
         eventEnvironmentView?.environment = environment
+        eventEnvironmentView?.weatherCondition = currentWeatherCondition
         val environmentView = eventEnvironmentView
         eventOverlayParams?.let { eventParams ->
             eventParams.x = 0
@@ -521,10 +527,20 @@ class OverlayService : Service() {
         } else {
             view.rootWindowInsets?.displayCutout
         }
-        val screenCenterX = resources.displayMetrics.widthPixels / 2
-        val cameraBounds = cutout?.boundingRects?.minByOrNull { rect ->
-            kotlin.math.abs(rect.centerX() - screenCenterX)
+        val screenWidth = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            windowManager?.currentWindowMetrics?.bounds?.width()
+                ?: resources.displayMetrics.widthPixels
+        } else {
+            resources.displayMetrics.widthPixels
         }
+        val screenCenterX = screenWidth / 2
+        val cameraBounds = cutout?.boundingRects
+            ?.filter { rect ->
+                rect.width() in 1..(screenWidth * MAX_VALID_CUTOUT_WIDTH_FRACTION).toInt()
+            }
+            ?.minByOrNull { rect ->
+                kotlin.math.abs(rect.centerX() - screenCenterX)
+            }
         val marginPx = (8 * resources.displayMetrics.density).toInt()
         petAIController.updateNoStopZone(
             left = cameraBounds?.left,

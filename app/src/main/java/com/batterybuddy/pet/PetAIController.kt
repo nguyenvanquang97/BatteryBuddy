@@ -359,6 +359,14 @@ class PetAIController {
         val totalCount = leftCount + rightCount
 
         if (totalCount == 0) return minX
+        val petIsLeftOfCutout = currentX + petWidthPx <= zoneLeft
+        val petIsRightOfCutout = currentX >= zoneRight
+        if (petIsLeftOfCutout && rightCount > 0 && Random.nextFloat() < CROSS_CUTOUT_CHANCE) {
+            return Random.nextInt(rightMin, maxX + 1)
+        }
+        if (petIsRightOfCutout && leftCount > 0 && Random.nextFloat() < CROSS_CUTOUT_CHANCE) {
+            return Random.nextInt(minX, leftMax + 1)
+        }
         val offset = Random.nextInt(totalCount)
         return if (offset < leftCount) minX + offset else rightMin + offset - leftCount
     }
@@ -389,5 +397,6 @@ class PetAIController {
         private const val POKE_JUMP_DURATION_MS = 650L
         private const val ANGRY_LOOK_DURATION_MS = 3_000L
         private const val POKE_COOLDOWN_MS = 500L
+        private const val CROSS_CUTOUT_CHANCE = 0.65f
     }
 }
