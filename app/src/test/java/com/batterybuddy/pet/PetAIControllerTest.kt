@@ -32,4 +32,17 @@ class PetAIControllerTest {
         assertEquals(550, controller.currentX)
         assertEquals(550, reportedX)
     }
+
+    @Test
+    fun `center no-stop point expands using the full pet width`() {
+        val controller = PetAIController()
+        var reportedX = -1
+        controller.onPositionChanged = { x, _ -> reportedX = x }
+        controller.updatePlaygroundBounds(minX = 400, maxX = 800, petWidthPx = 100)
+
+        controller.updateNoStopZone(left = 500, right = 500, marginPx = 10)
+
+        assertEquals(510, controller.currentX)
+        assertEquals(510, reportedX)
+    }
 }

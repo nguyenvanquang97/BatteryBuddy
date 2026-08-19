@@ -81,7 +81,6 @@ class OverlayService : Service() {
         const val EXTRA_EVENT = "event"
         private const val WEATHER_REFRESH_INTERVAL_MS = 30 * 60 * 1000L
         private const val EVENT_REFRESH_INTERVAL_MS = 15 * 60 * 1000L
-        private const val MAX_VALID_CUTOUT_WIDTH_FRACTION = 0.45f
     }
 
     private val batteryReceiver = object : BroadcastReceiver() {
@@ -403,13 +402,6 @@ class OverlayService : Service() {
                 else -> true
             }
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            view.setOnApplyWindowInsetsListener { _, insets ->
-                updateCameraNoStopZone(view)
-                insets
-            }
-        }
-
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -431,8 +423,7 @@ class OverlayService : Service() {
 
             applyPreferencesToOverlay()
             view.post {
-                updateCameraNoStopZone(view)
-                view.requestApplyInsets()
+                updateCenterNoStopZone()
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -505,7 +496,7 @@ class OverlayService : Service() {
             maxX = currentPreferences.maxX,
             petWidthPx = view.desiredWidthPx()
         )
-        updateCameraNoStopZone(view)
+        updateCenterNoStopZone()
 
         params.y = currentPreferences.overlayY
 
@@ -516,17 +507,7 @@ class OverlayService : Service() {
         }
     }
 
-    private fun updateCameraNoStopZone(view: PetView) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
-            petAIController.updateNoStopZone(null, null)
-            return
-        }
-
-        val cutout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            windowManager?.currentWindowMetrics?.windowInsets?.displayCutout
-        } else {
-            view.rootWindowInsets?.displayCutout
-        }
+    private fun updateCenterNoStopZone() {
         val screenWidth = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             windowManager?.currentWindowMetrics?.bounds?.width()
                 ?: resources.displayMetrics.widthPixels
@@ -534,17 +515,10 @@ class OverlayService : Service() {
             resources.displayMetrics.widthPixels
         }
         val screenCenterX = screenWidth / 2
-        val cameraBounds = cutout?.boundingRects
-            ?.filter { rect ->
-                rect.width() in 1..(screenWidth * MAX_VALID_CUTOUT_WIDTH_FRACTION).toInt()
-            }
-            ?.minByOrNull { rect ->
-                kotlin.math.abs(rect.centerX() - screenCenterX)
-            }
-        val marginPx = (8 * resources.displayMetrics.density).toInt()
+        val marginPx = (4 * resources.displayMetrics.density).toInt()
         petAIController.updateNoStopZone(
-            left = cameraBounds?.left,
-            right = cameraBounds?.right,
+            left = screenCenterX,
+            right = screenCenterX,
             marginPx = marginPx
         )
     }

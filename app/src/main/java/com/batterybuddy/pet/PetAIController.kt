@@ -197,22 +197,26 @@ class PetAIController {
             delay(DRINK_START_DURATION_MS)
             if (!currentBatteryState.isCharging) return
         }
-        setBehavior(behavior)
-
         when (behavior) {
             PetBehaviorState.WALK -> performWalkAction()
-            PetBehaviorState.IDLE -> delay(Random.nextLong(3000, 6000))
-            PetBehaviorState.SIT -> delay(Random.nextLong(4000, 8000))
-            PetBehaviorState.SIT_DOWN -> delay(SIT_DOWN_DURATION_MS)
-            PetBehaviorState.LOOK_FRONT -> delay(Random.nextLong(3000, 5000))
-            PetBehaviorState.SLEEP -> delay(Random.nextLong(6000, 12000))
-            PetBehaviorState.CHARGING_HAPPY -> delay(Random.nextLong(3000, 6000))
-            PetBehaviorState.DRINK_START -> delay(DRINK_START_DURATION_MS)
-            PetBehaviorState.DRINK_MILK -> delay(Random.nextLong(6000, 10000))
-            PetBehaviorState.LIGHTNING_HIT -> delay(LIGHTNING_HIT_DURATION_MS)
-            PetBehaviorState.SHOCKED -> delay(SHOCKED_DURATION_MS)
-            PetBehaviorState.POKE_JUMP -> delay(POKE_JUMP_DURATION_MS)
-            PetBehaviorState.ANGRY_LOOK -> delay(ANGRY_LOOK_DURATION_MS)
+            else -> {
+                setBehavior(behavior)
+                when (behavior) {
+                    PetBehaviorState.IDLE -> delay(Random.nextLong(3000, 6000))
+                    PetBehaviorState.SIT -> delay(Random.nextLong(4000, 8000))
+                    PetBehaviorState.SIT_DOWN -> delay(SIT_DOWN_DURATION_MS)
+                    PetBehaviorState.LOOK_FRONT -> delay(Random.nextLong(3000, 5000))
+                    PetBehaviorState.SLEEP -> delay(Random.nextLong(6000, 12000))
+                    PetBehaviorState.CHARGING_HAPPY -> delay(Random.nextLong(3000, 6000))
+                    PetBehaviorState.DRINK_START -> delay(DRINK_START_DURATION_MS)
+                    PetBehaviorState.DRINK_MILK -> delay(Random.nextLong(6000, 10000))
+                    PetBehaviorState.LIGHTNING_HIT -> delay(LIGHTNING_HIT_DURATION_MS)
+                    PetBehaviorState.SHOCKED -> delay(SHOCKED_DURATION_MS)
+                    PetBehaviorState.POKE_JUMP -> delay(POKE_JUMP_DURATION_MS)
+                    PetBehaviorState.ANGRY_LOOK -> delay(ANGRY_LOOK_DURATION_MS)
+                    PetBehaviorState.WALK -> Unit
+                }
+            }
         }
     }
 
@@ -220,16 +224,28 @@ class PetAIController {
         val effectiveMinX = effectiveMinX()
         val effectiveMaxX = effectiveMaxX()
 
-        val targetX = randomSafeTargetX(effectiveMinX, effectiveMaxX)
+        val safeCurrentX = currentX.coerceIn(effectiveMinX, effectiveMaxX)
+        if (safeCurrentX != currentX) {
+            currentX = safeCurrentX
+            onPositionChanged?.invoke(currentX, currentFacingRight)
+        }
+
+        val targetX = randomSafeTargetX(
+            minX = effectiveMinX,
+            maxX = effectiveMaxX,
+            avoidX = currentX,
+            minDistancePx = MIN_WALK_DISTANCE_PX
+        )
         val distance = Math.abs(targetX - currentX)
 
-        if (distance < 10) {
+        if (distance < MIN_WALK_DISTANCE_PX) {
             delayAfterStopping(transitionAfterWalk())
             return
         }
 
         val isFacingRight = targetX > currentX
         currentFacingRight = isFacingRight
+        setBehavior(PetBehaviorState.WALK)
 
         val stepDelayMs = when {
             currentBatteryState.isCharging -> 15L
@@ -347,28 +363,68 @@ class PetAIController {
         }
     }
 
-    private fun randomSafeTargetX(minX: Int, maxX: Int): Int {
+    private fun randomSafeTargetX(
+        minX: Int,
+        maxX: Int,
+        avoidX: Int? = null,
+        minDistancePx: Int = 0
+    ): Int {
         if (maxX <= minX) return minX
 
-        val zoneLeft = noStopZoneLeft ?: return Random.nextInt(minX, maxX + 1)
-        val zoneRight = noStopZoneRight ?: return Random.nextInt(minX, maxX + 1)
+        val targetRanges = safeTargetRanges(minX, maxX)
+        val walkableRanges = if (avoidX != null && minDistancePx > 0) {
+            targetRanges.flatMap { range ->
+                listOfNotNull(
+                    (range.first..minOf(range.last, avoidX - minDistancePx))
+                        .takeIf { !it.isEmpty() },
+                    (maxOf(range.first, avoidX + minDistancePx)..range.last)
+                        .takeIf { !it.isEmpty() }
+                )
+            }
+        } else {
+            targetRanges
+        }
+
+        if (walkableRanges.isEmpty()) return avoidX?.coerceIn(minX, maxX) ?: minX
+
+        val zoneLeft = noStopZoneLeft
+        val zoneRight = noStopZoneRight
+        if (zoneLeft != null && zoneRight != null && avoidX != null) {
+            val petIsLeftOfCutout = avoidX + petWidthPx <= zoneLeft
+            val petIsRightOfCutout = avoidX >= zoneRight
+            val rightRanges = walkableRanges.filter { it.last >= zoneRight }
+            val leftRanges = walkableRanges.filter { it.first <= zoneLeft - petWidthPx }
+            if (petIsLeftOfCutout && rightRanges.isNotEmpty() && Random.nextFloat() < CROSS_CUTOUT_CHANCE) {
+                return randomFromRanges(rightRanges)
+            }
+            if (petIsRightOfCutout && leftRanges.isNotEmpty() && Random.nextFloat() < CROSS_CUTOUT_CHANCE) {
+                return randomFromRanges(leftRanges)
+            }
+        }
+
+        return randomFromRanges(walkableRanges)
+    }
+
+    private fun safeTargetRanges(minX: Int, maxX: Int): List<IntRange> {
+        val zoneLeft = noStopZoneLeft ?: return listOf(minX..maxX)
+        val zoneRight = noStopZoneRight ?: return listOf(minX..maxX)
         val leftMax = minOf(maxX, zoneLeft - petWidthPx - noStopMarginPx)
         val rightMin = maxOf(minX, zoneRight + noStopMarginPx)
-        val leftCount = (leftMax - minX + 1).coerceAtLeast(0)
-        val rightCount = (maxX - rightMin + 1).coerceAtLeast(0)
-        val totalCount = leftCount + rightCount
+        return listOfNotNull(
+            (minX..leftMax).takeIf { !it.isEmpty() },
+            (rightMin..maxX).takeIf { !it.isEmpty() }
+        )
+    }
 
-        if (totalCount == 0) return minX
-        val petIsLeftOfCutout = currentX + petWidthPx <= zoneLeft
-        val petIsRightOfCutout = currentX >= zoneRight
-        if (petIsLeftOfCutout && rightCount > 0 && Random.nextFloat() < CROSS_CUTOUT_CHANCE) {
-            return Random.nextInt(rightMin, maxX + 1)
+    private fun randomFromRanges(ranges: List<IntRange>): Int {
+        val totalCount = ranges.sumOf { it.last - it.first + 1 }
+        var offset = Random.nextInt(totalCount)
+        ranges.forEach { range ->
+            val count = range.last - range.first + 1
+            if (offset < count) return range.first + offset
+            offset -= count
         }
-        if (petIsRightOfCutout && leftCount > 0 && Random.nextFloat() < CROSS_CUTOUT_CHANCE) {
-            return Random.nextInt(minX, leftMax + 1)
-        }
-        val offset = Random.nextInt(totalCount)
-        return if (offset < leftCount) minX + offset else rightMin + offset - leftCount
+        return ranges.last().last
     }
 
     private fun safeStationaryX(x: Int): Int {
@@ -398,5 +454,6 @@ class PetAIController {
         private const val ANGRY_LOOK_DURATION_MS = 3_000L
         private const val POKE_COOLDOWN_MS = 500L
         private const val CROSS_CUTOUT_CHANCE = 0.65f
+        private const val MIN_WALK_DISTANCE_PX = 28
     }
 }
