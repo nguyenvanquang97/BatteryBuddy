@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
-"""Extract the Qixi backdrop and four-frame magpie flight cycle."""
+"""Extract Qixi ambient status-bar decorations and magpie flight frames."""
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from extract_pet_sprites import isolate_largest_component, normalize
-
-
-BACKGROUND_BOTTOM = 480
-BACKGROUND_WIDTH = 1024
-MAGPIE_COLUMNS = 4
+from extract_pet_sprites import create_contact_sheet
 
 
 def trim_transparency(image: Image.Image) -> Image.Image:
@@ -20,25 +16,64 @@ def trim_transparency(image: Image.Image) -> Image.Image:
     return image.crop(bounds)
 
 
-def create_preview(
-    background: Image.Image,
-    magpies: list[Image.Image],
-    output_path: Path,
-) -> None:
-    width = 1280
-    background_height = round(width * background.height / background.width)
-    label_height = 32
-    canvas = Image.new("RGB", (width, background_height + 320 + label_height), (35, 39, 47))
+@dataclass(frozen=True)
+class QixiAsset:
+    name: str
+    crop: tuple[int, int, int, int]
+
+
+ASSETS = (
+    QixiAsset("qixi_moon", (0, 0, 465, 390)),
+    QixiAsset("qixi_bridge", (500, 70, 1145, 355)),
+    QixiAsset("qixi_badge", (1255, 35, 1765, 355)),
+    QixiAsset("qixi_sparkles", (1240, 390, 1765, 685)),
+    QixiAsset("qixi_petals", (55, 720, 755, 845)),
+    QixiAsset("qixi_cloud_01", (850, 705, 1225, 850)),
+    QixiAsset("qixi_cloud_02", (1250, 690, 1765, 860)),
+    QixiAsset("qixi_magpie_01", (0, 390, 330, 685)),
+    QixiAsset("qixi_magpie_02", (350, 395, 615, 690)),
+    QixiAsset("qixi_magpie_03", (645, 390, 905, 690)),
+    QixiAsset("qixi_magpie_04", (890, 420, 1165, 690)),
+)
+
+
+def fit_inside(image: Image.Image, max_width: int, max_height: int) -> Image.Image:
+    scale = min(max_width / image.width, max_height / image.height, 1.0)
+    width = max(1, round(image.width * scale))
+    height = max(1, round(image.height * scale))
+    return image.resize((width, height), Image.Resampling.LANCZOS)
+
+
+def create_preview(outputs: list[tuple[str, Image.Image]], output_path: Path) -> None:
+    columns = 4
+    cell_width = 320
+    cell_height = 220
+    label_height = 28
+    rows = (len(outputs) + columns - 1) // columns
+    canvas = Image.new(
+        "RGB",
+        (columns * cell_width, rows * (cell_height + label_height)),
+        (35, 39, 47),
+    )
     draw = ImageDraw.Draw(canvas)
     font = ImageFont.load_default(size=18)
 
-    backdrop = background.resize((width, background_height), Image.Resampling.LANCZOS)
-    canvas.paste(backdrop, (0, 0), backdrop)
-    for index, magpie in enumerate(magpies):
-        canvas.paste(magpie, (index * 320, background_height), magpie)
+    for index, (name, sprite) in enumerate(outputs):
+        column = index % columns
+        row = index // columns
+        x = column * cell_width
+        y = row * (cell_height + label_height)
+        checker = Image.new("RGB", (cell_width, cell_height), (245, 245, 245))
+        checker.paste((225, 225, 225), (0, cell_height // 2, cell_width, cell_height))
+        checker.paste((225, 225, 225), (cell_width // 2, 0, cell_width, cell_height // 2))
+        preview = fit_inside(sprite, cell_width - 20, cell_height - 20)
+        paste_x = x + (cell_width - preview.width) // 2
+        paste_y = y + (cell_height - preview.height) // 2
+        checker.paste(preview, (paste_x - x, paste_y - y), preview)
+        canvas.paste(checker, (x, y))
         draw.text(
-            (index * 320 + 8, background_height + 320 + 6),
-            f"qixi_magpie_{index + 1:02d}",
+            (x + 8, y + cell_height + 5),
+            name,
             fill=(255, 255, 255),
             font=font,
         )
@@ -54,26 +89,20 @@ def main() -> None:
     preview_path = project_root / "artifacts/qixi-environment-contact-sheet.png"
 
     source = Image.open(source_path).convert("RGBA")
-    background = trim_transparency(source.crop((0, 0, source.width, BACKGROUND_BOTTOM)))
-    background_height = round(BACKGROUND_WIDTH * background.height / background.width)
-    background = background.resize(
-        (BACKGROUND_WIDTH, background_height),
-        Image.Resampling.LANCZOS,
+    outputs: list[tuple[str, Image.Image]] = []
+
+    for asset in ASSETS:
+        sprite = trim_transparency(source.crop(asset.crop))
+        sprite.save(output_dir / f"{asset.name}.png", optimize=True)
+        outputs.append((asset.name, sprite))
+
+    create_preview(outputs, preview_path)
+    create_contact_sheet(
+        [(name, fit_inside(sprite, 288, 288)) for name, sprite in outputs],
+        project_root / "artifacts/qixi-environment-normalized-contact-sheet.png",
+        columns=4,
     )
-    background.save(output_dir / "qixi_background.png", optimize=True)
-
-    magpie_area = source.crop((0, BACKGROUND_BOTTOM, source.width, source.height))
-    magpies: list[Image.Image] = []
-    overlap = 8
-    for column in range(MAGPIE_COLUMNS):
-        left = max(0, round(column * source.width / MAGPIE_COLUMNS) - overlap)
-        right = min(source.width, round((column + 1) * source.width / MAGPIE_COLUMNS) + overlap)
-        magpie = normalize(isolate_largest_component(magpie_area.crop((left, 0, right, magpie_area.height))))
-        magpie.save(output_dir / f"qixi_magpie_{column + 1:02d}.png", optimize=True)
-        magpies.append(magpie)
-
-    create_preview(background, magpies, preview_path)
-    print(f"Exported Qixi background and {len(magpies)} magpie frames to {output_dir}")
+    print(f"Exported {len(outputs)} Qixi ambient assets to {output_dir}")
     print(f"Contact sheet: {preview_path}")
 
 

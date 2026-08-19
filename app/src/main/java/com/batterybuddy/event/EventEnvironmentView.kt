@@ -7,13 +7,13 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.View
 import android.view.animation.LinearInterpolator
 import com.batterybuddy.R
 import com.batterybuddy.weather.WeatherCondition
-import kotlin.math.min
 import kotlin.math.sin
 
 class EventEnvironmentView @JvmOverloads constructor(
@@ -40,17 +40,18 @@ class EventEnvironmentView @JvmOverloads constructor(
     private val weatherPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         strokeCap = Paint.Cap.ROUND
     }
+    private val sourceRect = Rect()
     private val drawRect = RectF()
-    private val background: Bitmap by lazy {
-        BitmapFactory.decodeResource(resources, R.drawable.qixi_background)
-    }
+    private val badge: Bitmap by lazy { decode(R.drawable.qixi_badge) }
+    private val sparkles: Bitmap by lazy { decode(R.drawable.qixi_sparkles) }
+    private val petals: Bitmap by lazy { decode(R.drawable.qixi_petals) }
     private val magpieFrames: List<Bitmap> by lazy {
         listOf(
             R.drawable.qixi_magpie_01,
             R.drawable.qixi_magpie_02,
             R.drawable.qixi_magpie_03,
             R.drawable.qixi_magpie_04
-        ).map { resourceId -> BitmapFactory.decodeResource(resources, resourceId) }
+        ).map(::decode)
     }
 
     private var animationProgress = 0f
@@ -89,29 +90,124 @@ class EventEnvironmentView @JvmOverloads constructor(
     }
 
     private fun drawQixiEnvironment(canvas: Canvas, density: Float) {
-        val backgroundAspectRatio = background.width.toFloat() / background.height
-        val maxBackgroundWidth = min(
-            width * 0.52f,
-            height * 0.88f * backgroundAspectRatio
+        val twinkle = 0.82f + sin(animationProgress * 2f * Math.PI).toFloat() * 0.18f
+
+        bitmapPaint.alpha = (78 * twinkle).toInt()
+        drawBitmapByWidth(
+            canvas = canvas,
+            bitmap = sparkles,
+            widthPx = height * 1.35f,
+            centerX = width * 0.36f,
+            bottom = height * 0.82f
         )
-        val backgroundHeight = maxBackgroundWidth * background.height / background.width
-        val left = (width - maxBackgroundWidth) / 2f
-        val top = (height - backgroundHeight) / 2f
-        drawRect.set(left, top, left + maxBackgroundWidth, top + backgroundHeight)
-        bitmapPaint.alpha = 225
-        canvas.drawBitmap(background, null, drawRect, bitmapPaint)
+        bitmapPaint.alpha = (58 * twinkle).toInt()
+        drawBitmapByWidth(
+            canvas = canvas,
+            bitmap = sparkles,
+            widthPx = height * 1.05f,
+            centerX = width * 0.72f,
+            bottom = height * 0.88f
+        )
+
+        drawQixiPetals(canvas)
+
+        bitmapPaint.alpha = 92
+        drawBitmapByHeight(
+            canvas = canvas,
+            bitmap = badge,
+            heightPx = height * 0.36f,
+            centerX = width * 0.54f,
+            bottom = height * 0.78f
+        )
 
         val frameIndex = (animationProgress * magpieFrames.size)
             .toInt()
             .coerceAtMost(magpieFrames.lastIndex)
         val magpie = magpieFrames[frameIndex]
-        val magpieSize = (height * 0.28f).coerceAtLeast(10f * density)
-        val x = -magpieSize + animationProgress * (width + magpieSize * 2f)
-        val y = height * 0.10f + sin(animationProgress * 4f * Math.PI).toFloat() * 2f * density
-        drawRect.set(x, y, x + magpieSize, y + magpieSize)
-        bitmapPaint.alpha = 235
+        val magpieHeight = (height * 0.30f).coerceAtLeast(6f * density)
+        val magpieWidth = magpieHeight * magpie.width / magpie.height
+        val x = -magpieWidth + animationProgress * (width + magpieWidth * 2f)
+        val centerY = height * 0.42f + sin(animationProgress * 4f * Math.PI).toFloat() * density
+        drawRect.set(
+            x,
+            centerY - magpieHeight / 2f,
+            x + magpieWidth,
+            centerY + magpieHeight / 2f
+        )
+        bitmapPaint.alpha = 118
         canvas.drawBitmap(magpie, null, drawRect, bitmapPaint)
         bitmapPaint.alpha = 255
+    }
+
+    private fun decode(resourceId: Int): Bitmap =
+        BitmapFactory.decodeResource(resources, resourceId)
+
+    private fun drawBitmapByWidth(
+        canvas: Canvas,
+        bitmap: Bitmap,
+        widthPx: Float,
+        centerX: Float,
+        bottom: Float
+    ) {
+        val heightPx = widthPx * bitmap.height / bitmap.width
+        drawRect.set(
+            centerX - widthPx / 2f,
+            bottom - heightPx,
+            centerX + widthPx / 2f,
+            bottom
+        )
+        canvas.drawBitmap(bitmap, null, drawRect, bitmapPaint)
+    }
+
+    private fun drawBitmapByHeight(
+        canvas: Canvas,
+        bitmap: Bitmap,
+        heightPx: Float,
+        centerX: Float,
+        bottom: Float
+    ) {
+        val widthPx = heightPx * bitmap.width / bitmap.height
+        drawRect.set(
+            centerX - widthPx / 2f,
+            bottom - heightPx,
+            centerX + widthPx / 2f,
+            bottom
+        )
+        canvas.drawBitmap(bitmap, null, drawRect, bitmapPaint)
+    }
+
+    private fun drawQixiPetals(canvas: Canvas) {
+        val sourcePetalCount = 6
+        val visiblePetalCount = 3
+        val frameWidth = petals.width / sourcePetalCount
+        val petalHeight = height * 0.075f
+        val petalWidth = petalHeight * frameWidth / petals.height
+
+        repeat(visiblePetalCount) { index ->
+            val phase = (animationProgress * 0.48f + index * 0.31f) % 1f
+            val baseX = width * PETAL_X_FRACTIONS[index]
+            val driftX = sin((phase * 2f + index) * Math.PI).toFloat() * width * 0.012f
+            val centerX = baseX + driftX
+            val centerY = -petalHeight + phase * (height + petalHeight * 2f)
+
+            sourceRect.set(
+                index * frameWidth,
+                0,
+                (index + 1) * frameWidth,
+                petals.height
+            )
+            drawRect.set(
+                centerX - petalWidth / 2f,
+                centerY - petalHeight / 2f,
+                centerX + petalWidth / 2f,
+                centerY + petalHeight / 2f
+            )
+            bitmapPaint.alpha = 56
+            canvas.save()
+            canvas.rotate(-12f + index * 10f + phase * 18f, centerX, centerY)
+            canvas.drawBitmap(petals, sourceRect, drawRect, bitmapPaint)
+            canvas.restore()
+        }
     }
 
     private fun drawWeather(canvas: Canvas, density: Float) {
@@ -132,7 +228,7 @@ class EventEnvironmentView @JvmOverloads constructor(
     private fun drawRain(canvas: Canvas, density: Float, count: Int) {
         weatherPaint.style = Paint.Style.STROKE
         weatherPaint.color = Color.parseColor("#A8D6FF")
-        weatherPaint.alpha = 190
+        weatherPaint.alpha = if (environment == EventEnvironment.QIXI) 115 else 190
         weatherPaint.strokeWidth = 1.1f * density
         repeat(count) { index ->
             val phase = (animationProgress * 6f + index * 0.173f) % 1f
@@ -146,7 +242,7 @@ class EventEnvironmentView @JvmOverloads constructor(
     private fun drawWind(canvas: Canvas, density: Float) {
         weatherPaint.style = Paint.Style.STROKE
         weatherPaint.color = Color.parseColor("#B9EDFF")
-        weatherPaint.alpha = 170
+        weatherPaint.alpha = if (environment == EventEnvironment.QIXI) 105 else 170
         weatherPaint.strokeWidth = density
         repeat(5) { index ->
             val phase = (animationProgress * 2.5f + index * 0.23f) % 1f
@@ -160,7 +256,7 @@ class EventEnvironmentView @JvmOverloads constructor(
     private fun drawSnow(canvas: Canvas, density: Float) {
         weatherPaint.style = Paint.Style.FILL
         weatherPaint.color = Color.WHITE
-        weatherPaint.alpha = 220
+        weatherPaint.alpha = if (environment == EventEnvironment.QIXI) 135 else 220
         repeat(14) { index ->
             val phase = (animationProgress * 1.8f + index * 0.137f) % 1f
             val x = width * ((index * 0.379f) % 1f)
@@ -178,6 +274,7 @@ class EventEnvironmentView @JvmOverloads constructor(
 
     companion object {
         private const val ANIMATION_DURATION_MS = 6_000L
+        private val PETAL_X_FRACTIONS = floatArrayOf(0.28f, 0.58f, 0.82f)
 
         fun desiredHeightPx(context: Context): Int {
             val density = context.resources.displayMetrics.density
