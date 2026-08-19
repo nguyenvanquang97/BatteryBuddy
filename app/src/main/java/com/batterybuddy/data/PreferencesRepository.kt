@@ -6,7 +6,9 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.batterybuddy.event.EventMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -20,7 +22,11 @@ data class OverlayPreferences(
     val startOnBoot: Boolean = false,
     val isPetMode: Boolean = true,
     val minX: Int = 10,
-    val maxX: Int = 320
+    val maxX: Int = 320,
+    val weatherEnabled: Boolean = false,
+    val weatherLatitudeE6: Int = 10_776_900,
+    val weatherLongitudeE6: Int = 106_700_900,
+    val eventMode: EventMode = EventMode.AUTO
 )
 
 class PreferencesRepository(private val context: Context) {
@@ -34,6 +40,10 @@ class PreferencesRepository(private val context: Context) {
         val KEY_IS_PET_MODE = booleanPreferencesKey("is_pet_mode")
         val KEY_MIN_X = intPreferencesKey("min_x")
         val KEY_MAX_X = intPreferencesKey("max_x")
+        val KEY_WEATHER_ENABLED = booleanPreferencesKey("weather_enabled")
+        val KEY_WEATHER_LATITUDE_E6 = intPreferencesKey("weather_latitude_e6")
+        val KEY_WEATHER_LONGITUDE_E6 = intPreferencesKey("weather_longitude_e6")
+        val KEY_EVENT_MODE = stringPreferencesKey("event_mode")
     }
 
     val overlayPreferencesFlow: Flow<OverlayPreferences> = context.dataStore.data
@@ -46,7 +56,13 @@ class PreferencesRepository(private val context: Context) {
                 startOnBoot = preferences[KEY_START_ON_BOOT] ?: false,
                 isPetMode = preferences[KEY_IS_PET_MODE] ?: true,
                 minX = preferences[KEY_MIN_X] ?: 10,
-                maxX = preferences[KEY_MAX_X] ?: 320
+                maxX = preferences[KEY_MAX_X] ?: 320,
+                weatherEnabled = preferences[KEY_WEATHER_ENABLED] ?: false,
+                weatherLatitudeE6 = preferences[KEY_WEATHER_LATITUDE_E6] ?: 10_776_900,
+                weatherLongitudeE6 = preferences[KEY_WEATHER_LONGITUDE_E6] ?: 106_700_900,
+                eventMode = preferences[KEY_EVENT_MODE]
+                    ?.let { stored -> runCatching { EventMode.valueOf(stored) }.getOrNull() }
+                    ?: EventMode.AUTO
             )
         }
 
@@ -80,5 +96,20 @@ class PreferencesRepository(private val context: Context) {
 
     suspend fun updateMaxX(maxX: Int) {
         context.dataStore.edit { preferences -> preferences[KEY_MAX_X] = maxX }
+    }
+
+    suspend fun updateWeatherEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences -> preferences[KEY_WEATHER_ENABLED] = enabled }
+    }
+
+    suspend fun updateWeatherLocation(latitude: Double, longitude: Double) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_WEATHER_LATITUDE_E6] = (latitude * 1_000_000).toInt()
+            preferences[KEY_WEATHER_LONGITUDE_E6] = (longitude * 1_000_000).toInt()
+        }
+    }
+
+    suspend fun updateEventMode(mode: EventMode) {
+        context.dataStore.edit { preferences -> preferences[KEY_EVENT_MODE] = mode.name }
     }
 }

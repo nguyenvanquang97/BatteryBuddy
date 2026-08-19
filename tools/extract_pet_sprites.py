@@ -101,8 +101,11 @@ def normalize(image: Image.Image) -> Image.Image:
     return canvas
 
 
-def create_contact_sheet(outputs: list[tuple[str, Image.Image]], path: Path) -> None:
-    columns = 3
+def create_contact_sheet(
+    outputs: list[tuple[str, Image.Image]],
+    path: Path,
+    columns: int = 3,
+) -> None:
     label_height = 32
     rows = (len(outputs) + columns - 1) // columns
     sheet = Image.new(

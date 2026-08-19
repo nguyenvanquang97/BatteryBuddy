@@ -1,5 +1,7 @@
 package com.batterybuddy.pet
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Bitmap
@@ -12,6 +14,7 @@ import android.util.AttributeSet
 import android.view.View
 import android.view.animation.LinearInterpolator
 import com.batterybuddy.battery.BatteryState
+import com.batterybuddy.weather.WeatherCondition
 import kotlin.math.PI
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -25,13 +28,24 @@ class PetView @JvmOverloads constructor(
     var behaviorState: PetBehaviorState = PetBehaviorState.IDLE
         set(value) {
             if (field == value) return
+            stateTransitionAnimator.cancel()
+            val oldFrames = spriteFrames.getValue(field)
+            previousFrame = oldFrames[frameIndex(oldFrames.size)]
             field = value
             animationProgress = 0f
+            restartAnimation()
+            startStateTransition()
             requestLayout()
             invalidate()
         }
 
     var batteryState: BatteryState = BatteryState()
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var weatherCondition: WeatherCondition = WeatherCondition.CLEAR
         set(value) {
             field = value
             invalidate()
@@ -60,6 +74,10 @@ class PetView @JvmOverloads constructor(
         }
 
     private val spritePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val weatherPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+    }
 
     private val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#4A90E2")
@@ -84,9 +102,11 @@ class PetView @JvmOverloads constructor(
     }
 
     private var animationProgress = 0f
+    private var previousFrame: Bitmap? = null
+    private var stateTransitionProgress = 1f
 
     private val spriteAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-        duration = ANIMATION_DURATION_MS
+        duration = animationDurationFor(behaviorState)
         repeatCount = ValueAnimator.INFINITE
         interpolator = LinearInterpolator()
         addUpdateListener { animator ->
@@ -95,13 +115,33 @@ class PetView @JvmOverloads constructor(
         }
     }
 
+    private val stateTransitionAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+        duration = STATE_TRANSITION_DURATION_MS
+        interpolator = LinearInterpolator()
+        addUpdateListener { animator ->
+            stateTransitionProgress = animator.animatedValue as Float
+            invalidate()
+        }
+        addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+                previousFrame = null
+                stateTransitionProgress = 1f
+                invalidate()
+            }
+        })
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
-        if (!spriteAnimator.isStarted) spriteAnimator.start()
+        if (!spriteAnimator.isStarted) {
+            spriteAnimator.duration = animationDurationFor(behaviorState)
+            spriteAnimator.start()
+        }
     }
 
     override fun onDetachedFromWindow() {
         spriteAnimator.cancel()
+        stateTransitionAnimator.cancel()
         super.onDetachedFromWindow()
     }
 
@@ -110,13 +150,19 @@ class PetView @JvmOverloads constructor(
         val spriteSize = (customSizeSp * density * SPRITE_SIZE_MULTIPLIER).roundToInt()
         badgeTextPaint.textSize = customSizeSp * density * 0.45f
 
-        val totalWidth = spriteSize + (24 * density).roundToInt()
+        val totalWidth = desiredWidthPx()
         val totalHeight = spriteSize + (18 * density).roundToInt()
 
         setMeasuredDimension(
             resolveSize(totalWidth, widthMeasureSpec),
             resolveSize(totalHeight, heightMeasureSpec)
         )
+    }
+
+    fun desiredWidthPx(): Int {
+        val density = resources.displayMetrics.density
+        val spriteSize = (customSizeSp * density * SPRITE_SIZE_MULTIPLIER).roundToInt()
+        return spriteSize + (24 * density).roundToInt()
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -135,12 +181,24 @@ class PetView @JvmOverloads constructor(
             PetBehaviorState.WALK -> -kotlin.math.abs(fastWave) * 2.5f * density
             PetBehaviorState.IDLE -> wave * density
             PetBehaviorState.SIT -> wave * 0.4f * density
+            PetBehaviorState.SIT_DOWN -> 0f
+            PetBehaviorState.LOOK_FRONT -> wave * 0.6f * density
             PetBehaviorState.SLEEP -> wave * 0.5f * density
             PetBehaviorState.CHARGING_HAPPY -> wave * 2f * density
+            PetBehaviorState.DRINK_START -> 0f
+            PetBehaviorState.DRINK_MILK -> wave * 0.25f * density
+            PetBehaviorState.LIGHTNING_HIT -> -kotlin.math.abs(fastWave) * 3f * density
+            PetBehaviorState.SHOCKED -> wave * 1.2f * density
+            PetBehaviorState.POKE_JUMP ->
+                -sin(animationProgress * PI).toFloat() * 12f * density
+            PetBehaviorState.ANGRY_LOOK -> fastWave * 0.4f * density
         }
         val scale = when (behaviorState) {
             PetBehaviorState.SLEEP -> 1f + wave * 0.015f
             PetBehaviorState.CHARGING_HAPPY -> 1f + fastWave * 0.02f
+            PetBehaviorState.DRINK_MILK -> 1f + wave * 0.008f
+            PetBehaviorState.LIGHTNING_HIT -> 1f + fastWave * 0.04f
+            PetBehaviorState.POKE_JUMP -> 1f + kotlin.math.abs(wave) * 0.035f
             else -> 1f
         }
         val drawSize = baseSize * scale
@@ -154,12 +212,20 @@ class PetView @JvmOverloads constructor(
         val frames = spriteFrames.getValue(behaviorState)
         val frame = frames[frameIndex(frames.size)]
 
+        drawWeatherEffects(canvas, density)
+
         canvas.save()
         // Source sprites face left, so mirror them while the pet moves right.
         if (isFacingRight) {
             canvas.scale(-1f, 1f, centerX, centerY)
         }
+        previousFrame?.let { oldFrame ->
+            spritePaint.alpha = ((1f - stateTransitionProgress) * 255).roundToInt()
+            canvas.drawBitmap(oldFrame, null, spriteRect, spritePaint)
+        }
+        spritePaint.alpha = (stateTransitionProgress * 255).roundToInt()
         canvas.drawBitmap(frame, null, spriteRect, spritePaint)
+        spritePaint.alpha = 255
         canvas.restore()
 
         // Draw Status Badge (e.g. Zzz, ⚡, or Battery %)
@@ -194,17 +260,144 @@ class PetView @JvmOverloads constructor(
         if (frameCount <= 1) return 0
 
         return when (behaviorState) {
-            PetBehaviorState.IDLE -> if (animationProgress > 0.82f) 1 else 0
-            PetBehaviorState.SLEEP -> if (animationProgress > 0.68f) 1 else 0
+            PetBehaviorState.IDLE,
+            PetBehaviorState.SIT,
+            PetBehaviorState.LOOK_FRONT,
+            PetBehaviorState.SLEEP -> calmFrameIndex(frameCount)
             PetBehaviorState.WALK,
+            PetBehaviorState.SIT_DOWN,
+            PetBehaviorState.DRINK_START,
+            PetBehaviorState.DRINK_MILK,
+            PetBehaviorState.LIGHTNING_HIT,
+            PetBehaviorState.SHOCKED,
+            PetBehaviorState.POKE_JUMP ->
+                (animationProgress * frameCount).toInt().coerceAtMost(frameCount - 1)
+            PetBehaviorState.ANGRY_LOOK -> angryFrameIndex(frameCount)
             PetBehaviorState.CHARGING_HAPPY ->
                 ((animationProgress * frameCount * 2).toInt() % frameCount)
-            PetBehaviorState.SIT -> 0
         }
     }
 
+    private fun angryFrameIndex(frameCount: Int): Int {
+        val index = when {
+            animationProgress < 0.12f -> 0
+            animationProgress < 0.24f -> 1
+            animationProgress < 0.36f -> 2
+            else -> 3
+        }
+        return index.coerceAtMost(frameCount - 1)
+    }
+
+    private fun calmFrameIndex(frameCount: Int): Int {
+        val index = when {
+            animationProgress < 0.55f -> 0
+            animationProgress < 0.70f -> 1
+            animationProgress < 0.77f -> 2
+            else -> 3
+        }
+        return index.coerceAtMost(frameCount - 1)
+    }
+
+    private fun restartAnimation() {
+        if (!isAttachedToWindow) return
+
+        spriteAnimator.cancel()
+        spriteAnimator.duration = animationDurationFor(behaviorState)
+        spriteAnimator.start()
+    }
+
+    private fun startStateTransition() {
+        if (!isAttachedToWindow) {
+            previousFrame = null
+            stateTransitionProgress = 1f
+            return
+        }
+
+        stateTransitionProgress = 0f
+        stateTransitionAnimator.start()
+    }
+
+    private fun animationDurationFor(state: PetBehaviorState): Long = when (state) {
+        PetBehaviorState.WALK -> WALK_ANIMATION_DURATION_MS
+        PetBehaviorState.IDLE -> IDLE_ANIMATION_DURATION_MS
+        PetBehaviorState.SIT -> SIT_ANIMATION_DURATION_MS
+        PetBehaviorState.SIT_DOWN -> SIT_DOWN_ANIMATION_DURATION_MS
+        PetBehaviorState.LOOK_FRONT -> LOOK_FRONT_ANIMATION_DURATION_MS
+        PetBehaviorState.SLEEP -> SLEEP_ANIMATION_DURATION_MS
+        PetBehaviorState.CHARGING_HAPPY -> CHARGING_ANIMATION_DURATION_MS
+        PetBehaviorState.DRINK_START -> DRINK_START_ANIMATION_DURATION_MS
+        PetBehaviorState.DRINK_MILK -> DRINK_MILK_ANIMATION_DURATION_MS
+        PetBehaviorState.LIGHTNING_HIT -> LIGHTNING_HIT_ANIMATION_DURATION_MS
+        PetBehaviorState.SHOCKED -> SHOCKED_ANIMATION_DURATION_MS
+        PetBehaviorState.POKE_JUMP -> POKE_JUMP_ANIMATION_DURATION_MS
+        PetBehaviorState.ANGRY_LOOK -> ANGRY_LOOK_ANIMATION_DURATION_MS
+    }
+
+    private fun drawWeatherEffects(canvas: Canvas, density: Float) {
+        when (weatherCondition) {
+            WeatherCondition.RAIN -> drawRain(canvas, density, 6)
+            WeatherCondition.HEAVY_RAIN -> drawRain(canvas, density, 10)
+            WeatherCondition.STORM -> {
+                drawRain(canvas, density, 12)
+                drawWind(canvas, density)
+            }
+            WeatherCondition.WIND -> drawWind(canvas, density)
+            WeatherCondition.SNOW -> drawSnow(canvas, density)
+            WeatherCondition.CLEAR,
+            WeatherCondition.CLOUDY -> Unit
+        }
+
+    }
+
+    private fun drawRain(canvas: Canvas, density: Float, count: Int) {
+        weatherPaint.color = Color.parseColor("#709BD7FF")
+        weatherPaint.strokeWidth = 1.2f * density
+        repeat(count) { index ->
+            val phase = (animationProgress + index * 0.17f) % 1f
+            val x = spriteRect.left + spriteRect.width() * ((index * 0.37f) % 1f)
+            val y = spriteRect.top + spriteRect.height() * phase
+            canvas.drawLine(x, y, x - 3f * density, y + 8f * density, weatherPaint)
+        }
+    }
+
+    private fun drawWind(canvas: Canvas, density: Float) {
+        weatherPaint.color = Color.parseColor("#80D8F3FF")
+        weatherPaint.strokeWidth = density
+        repeat(3) { index ->
+            val phase = (animationProgress + index * 0.31f) % 1f
+            val x = spriteRect.left + spriteRect.width() * phase
+            val y = spriteRect.top + spriteRect.height() * (0.25f + index * 0.2f)
+            canvas.drawLine(x, y, x + 13f * density, y, weatherPaint)
+        }
+    }
+
+    private fun drawSnow(canvas: Canvas, density: Float) {
+        weatherPaint.color = Color.WHITE
+        weatherPaint.style = Paint.Style.FILL
+        repeat(7) { index ->
+            val phase = (animationProgress + index * 0.19f) % 1f
+            val x = spriteRect.left + spriteRect.width() * ((index * 0.41f) % 1f)
+            val y = spriteRect.top + spriteRect.height() * phase
+            canvas.drawCircle(x, y, 1.5f * density, weatherPaint)
+        }
+        weatherPaint.style = Paint.Style.STROKE
+    }
+
     companion object {
-        private const val ANIMATION_DURATION_MS = 1_200L
+        private const val WALK_ANIMATION_DURATION_MS = 700L
+        private const val IDLE_ANIMATION_DURATION_MS = 3_200L
+        private const val SIT_ANIMATION_DURATION_MS = 3_600L
+        private const val SIT_DOWN_ANIMATION_DURATION_MS = 700L
+        private const val LOOK_FRONT_ANIMATION_DURATION_MS = 3_200L
+        private const val SLEEP_ANIMATION_DURATION_MS = 2_400L
+        private const val CHARGING_ANIMATION_DURATION_MS = 900L
+        private const val DRINK_START_ANIMATION_DURATION_MS = 800L
+        private const val DRINK_MILK_ANIMATION_DURATION_MS = 1_400L
+        private const val LIGHTNING_HIT_ANIMATION_DURATION_MS = 700L
+        private const val SHOCKED_ANIMATION_DURATION_MS = 1_000L
+        private const val POKE_JUMP_ANIMATION_DURATION_MS = 650L
+        private const val ANGRY_LOOK_ANIMATION_DURATION_MS = 3_000L
+        private const val STATE_TRANSITION_DURATION_MS = 180L
         private const val SPRITE_SIZE_MULTIPLIER = 2.6f
     }
 }

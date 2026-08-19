@@ -1,15 +1,22 @@
 package com.batterybuddy
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.net.Uri
 import android.os.BatteryManager
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -43,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,10 +61,16 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.batterybuddy.battery.BatteryState
 import com.batterybuddy.data.OverlayPreferences
 import com.batterybuddy.data.PreferencesRepository
+import com.batterybuddy.event.EventEnvironment
+import com.batterybuddy.event.EventMode
 import com.batterybuddy.overlay.CharacterStateMapper
+import com.batterybuddy.pet.PetBehaviorState
 import com.batterybuddy.service.OverlayService
 import com.batterybuddy.ui.theme.BatteryBuddyTheme
+import com.batterybuddy.weather.WeatherCondition
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
 
@@ -86,6 +101,43 @@ fun MainScreen() {
     // Dynamic Screen Width in Pixels
     val screenWidthPx = remember(context) { context.resources.displayMetrics.widthPixels }
 
+    val startPetOverlay = {
+        val intent = Intent(context, OverlayService::class.java).apply {
+            action = OverlayService.ACTION_START
+        }
+        ContextCompat.startForegroundService(context, intent)
+        scope.launch { preferencesRepository.updateOverlayEnabled(true) }
+        Toast.makeText(context, "Status Cat activated! 🐱", Toast.LENGTH_SHORT).show()
+    }
+
+    var hasNotificationPermission by remember {
+        mutableStateOf(isNotificationPermissionGranted(context))
+    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasNotificationPermission = granted
+        if (granted) {
+            startPetOverlay()
+        } else {
+            Toast.makeText(
+                context,
+                "Notification permission is required to keep Status Cat running",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            saveApproximateWeatherLocation(context, preferencesRepository, scope)
+        } else {
+            Toast.makeText(context, "Location permission was not granted", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     var hasOverlayPermission by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var batteryState by remember { mutableStateOf(BatteryState()) }
 
@@ -95,6 +147,7 @@ fun MainScreen() {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 hasOverlayPermission = Settings.canDrawOverlays(context)
+                hasNotificationPermission = isNotificationPermissionGranted(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -127,18 +180,30 @@ fun MainScreen() {
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                text = "🐱 BatteryBuddy Virtual Pet",
-                fontSize = 26.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
-
-            Text(
-                text = "Status Bar Autonomous Pet Companion",
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.status_cat_launcher_art),
+                    contentDescription = "Status Cat logo",
+                    modifier = Modifier.size(58.dp)
+                )
+                Column {
+                    Text(
+                        text = "Status Cat",
+                        fontSize = 26.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Battery, Weather & Event Pet",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -225,6 +290,29 @@ fun MainScreen() {
                             Text("Grant Permission")
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = if (hasNotificationPermission)
+                            "✓ Notification Permission Granted"
+                        else
+                            "✕ Notification Permission Required",
+                        fontWeight = FontWeight.Bold,
+                        color = if (hasNotificationPermission)
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        else
+                            MaterialTheme.colorScheme.error
+                    )
+                    if (!hasNotificationPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = {
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        ) {
+                            Text("Grant Notifications")
+                        }
+                    }
                 }
             }
 
@@ -240,13 +328,12 @@ fun MainScreen() {
                         if (!hasOverlayPermission) {
                             Toast.makeText(context, "Please grant overlay permission first", Toast.LENGTH_SHORT).show()
                             requestOverlayPermission(context)
+                        } else if (!hasNotificationPermission &&
+                            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                        ) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                         } else {
-                            val intent = Intent(context, OverlayService::class.java).apply {
-                                action = OverlayService.ACTION_START
-                            }
-                            ContextCompat.startForegroundService(context, intent)
-                            scope.launch { preferencesRepository.updateOverlayEnabled(true) }
-                            Toast.makeText(context, "Virtual Pet Activated! 🐱", Toast.LENGTH_SHORT).show()
+                            startPetOverlay()
                         }
                     },
                     modifier = Modifier.weight(1f),
@@ -323,9 +410,209 @@ fun MainScreen() {
             HorizontalDivider()
             Spacer(modifier = Modifier.height(16.dp))
 
+            Text(
+                text = "Môi Trường Thời Tiết",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Bật thời tiết thực", fontSize = 15.sp)
+                Switch(
+                    checked = preferences.weatherEnabled,
+                    onCheckedChange = {
+                        scope.launch { preferencesRepository.updateWeatherEnabled(it) }
+                    }
+                )
+            }
+
+            Text(
+                text = "Vị trí: %.4f, %.4f".format(
+                    preferences.weatherLatitudeE6 / 1_000_000.0,
+                    preferences.weatherLongitudeE6 / 1_000_000.0
+                ),
+                fontSize = 13.sp,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        if (ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.ACCESS_COARSE_LOCATION
+                            ) == PackageManager.PERMISSION_GRANTED
+                        ) {
+                            saveApproximateWeatherLocation(context, preferencesRepository, scope)
+                        } else {
+                            locationPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Lấy vị trí", fontSize = 12.sp)
+                }
+                OutlinedButton(
+                    onClick = {
+                        sendOverlayCommand(context, OverlayService.ACTION_REFRESH_WEATHER)
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Refresh", fontSize = 12.sp)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Test Môi Trường",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.fillMaxWidth()
+            )
+            WeatherCondition.values().toList().chunked(2).forEach { rowConditions ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rowConditions.forEach { condition ->
+                        OutlinedButton(
+                            onClick = {
+                                sendOverlayCommand(
+                                    context,
+                                    OverlayService.ACTION_TEST_WEATHER,
+                                    OverlayService.EXTRA_WEATHER,
+                                    condition.name
+                                )
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(condition.name, fontSize = 10.sp)
+                        }
+                    }
+                    if (rowConditions.size == 1) Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+            Button(
+                onClick = { sendOverlayCommand(context, OverlayService.ACTION_TEST_LIGHTNING) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Test Sét Đánh")
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "Môi Trường Sự Kiện",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                EventMode.values().forEach { mode ->
+                    if (preferences.eventMode == mode) {
+                        Button(
+                            onClick = {
+                                scope.launch { preferencesRepository.updateEventMode(mode) }
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(mode.name, fontSize = 10.sp)
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch { preferencesRepository.updateEventMode(mode) }
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(mode.name, fontSize = 10.sp)
+                        }
+                    }
+                }
+            }
+
+            Text(
+                text = "Test Sự Kiện",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                EventEnvironment.values().forEach { environment ->
+                    OutlinedButton(
+                        onClick = {
+                            sendOverlayCommand(
+                                context,
+                                OverlayService.ACTION_TEST_EVENT,
+                                OverlayService.EXTRA_EVENT,
+                                environment.name
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(environment.name, fontSize = 10.sp)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Test Tất Cả Trạng Thái Pet",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.fillMaxWidth()
+            )
+            PetBehaviorState.values().toList().chunked(2).forEach { rowStates ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rowStates.forEach { state ->
+                        OutlinedButton(
+                            onClick = {
+                                sendOverlayCommand(
+                                    context,
+                                    OverlayService.ACTION_TEST_STATE,
+                                    OverlayService.EXTRA_STATE,
+                                    state.name
+                                )
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(state.name, fontSize = 10.sp)
+                        }
+                    }
+                    if (rowStates.size == 1) Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(16.dp))
+
             // Clamped Playground Sliders
-            val maxAllowedMinX = (preferences.maxX - 40).coerceAtLeast(0)
-            val minAllowedMaxX = (preferences.minX + 40).coerceAtMost(screenWidthPx)
+            val density = context.resources.displayMetrics.density
+            val petWidthPx = (
+                preferences.overlaySize * density * 2.6f + 24 * density
+            ).roundToInt()
+            val maxAllowedMinX = (preferences.maxX - petWidthPx).coerceAtLeast(0)
+            val minAllowedMaxX = (preferences.minX + petWidthPx).coerceAtMost(screenWidthPx)
 
             Text(
                 text = "Phạm Vi Sân Chơi Status Bar (Width: ${screenWidthPx}px)",
@@ -345,7 +632,10 @@ fun MainScreen() {
             )
             Slider(
                 value = preferences.minX.toFloat().coerceIn(0f, maxAllowedMinX.toFloat()),
-                onValueChange = { scope.launch { preferencesRepository.updateMinX(it.toInt()) } },
+                onValueChange = {
+                    val minX = it.toInt().coerceAtMost(maxAllowedMinX)
+                    scope.launch { preferencesRepository.updateMinX(minX) }
+                },
                 valueRange = 0f..screenWidthPx.toFloat(),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -361,7 +651,10 @@ fun MainScreen() {
             )
             Slider(
                 value = preferences.maxX.toFloat().coerceIn(minAllowedMaxX.toFloat(), screenWidthPx.toFloat()),
-                onValueChange = { scope.launch { preferencesRepository.updateMaxX(it.toInt()) } },
+                onValueChange = {
+                    val maxX = it.toInt().coerceAtLeast(minAllowedMaxX)
+                    scope.launch { preferencesRepository.updateMaxX(maxX) }
+                },
                 valueRange = 0f..screenWidthPx.toFloat(),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -392,7 +685,7 @@ fun MainScreen() {
             Slider(
                 value = preferences.overlaySize.toFloat(),
                 onValueChange = { scope.launch { preferencesRepository.updateOverlaySize(it.toInt()) } },
-                valueRange = 14f..42f,
+                valueRange = 8f..42f,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -405,4 +698,61 @@ private fun requestOverlayPermission(context: Context) {
         Uri.parse("package:${context.packageName}")
     )
     context.startActivity(intent)
+}
+
+private fun isNotificationPermissionGranted(context: Context): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+
+private fun sendOverlayCommand(
+    context: Context,
+    action: String,
+    extraKey: String? = null,
+    extraValue: String? = null
+) {
+    if (!Settings.canDrawOverlays(context)) {
+        Toast.makeText(context, "Overlay permission is required", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val intent = Intent(context, OverlayService::class.java).apply {
+        this.action = action
+        if (extraKey != null && extraValue != null) {
+            putExtra(extraKey, extraValue)
+        }
+    }
+    ContextCompat.startForegroundService(context, intent)
+}
+
+private fun saveApproximateWeatherLocation(
+    context: Context,
+    preferencesRepository: PreferencesRepository,
+    scope: CoroutineScope
+) {
+    if (ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        ) != PackageManager.PERMISSION_GRANTED
+    ) {
+        return
+    }
+
+    val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+    val location = locationManager.getProviders(true)
+        .mapNotNull { provider ->
+            runCatching { locationManager.getLastKnownLocation(provider) }.getOrNull()
+        }
+        .maxByOrNull { it.time }
+
+    if (location == null) {
+        Toast.makeText(context, "No recent location is available", Toast.LENGTH_SHORT).show()
+        return
+    }
+
+    scope.launch {
+        preferencesRepository.updateWeatherLocation(location.latitude, location.longitude)
+    }
+    Toast.makeText(context, "Weather location updated", Toast.LENGTH_SHORT).show()
 }
