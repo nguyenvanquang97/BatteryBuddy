@@ -103,6 +103,47 @@ class OverlayService : Service() {
         }
     }
 
+    private var isScreenOn = true
+
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_OFF -> {
+                    isScreenOn = false
+                    pausePetWhenScreenOff()
+                }
+                Intent.ACTION_SCREEN_ON,
+                Intent.ACTION_USER_PRESENT -> {
+                    if (!isScreenOn) {
+                        isScreenOn = true
+                        resumePetWhenScreenOn()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun registerScreenReceiver() {
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        registerReceiver(screenReceiver, filter)
+    }
+
+    private fun pausePetWhenScreenOff() {
+        petView?.pauseAnimation()
+        eventEnvironmentView?.pauseAnimation()
+        petAIController.pause()
+    }
+
+    private fun resumePetWhenScreenOn() {
+        petView?.resumeAnimation()
+        eventEnvironmentView?.resumeAnimation()
+        petAIController.resume()
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -112,6 +153,7 @@ class OverlayService : Service() {
 
         setupPetAIController()
         registerBatteryReceiver()
+        registerScreenReceiver()
         observePreferences()
     }
 
@@ -153,6 +195,12 @@ class OverlayService : Service() {
         petAIController.onButterflyDismiss = {
             serviceScope.launch(Dispatchers.Main) {
                 eventEnvironmentView?.dismissButterfly()
+            }
+        }
+
+        petAIController.onLightningStrike = { x, y ->
+            serviceScope.launch(Dispatchers.Main) {
+                eventEnvironmentView?.triggerLightningStrike(x, y)
             }
         }
     }
@@ -581,6 +629,11 @@ class OverlayService : Service() {
 
         try {
             unregisterReceiver(batteryReceiver)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        try {
+            unregisterReceiver(screenReceiver)
         } catch (e: Exception) {
             e.printStackTrace()
         }

@@ -32,9 +32,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -100,6 +105,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen() {
     val context = LocalContext.current
@@ -123,7 +129,7 @@ fun MainScreen() {
         }
         ContextCompat.startForegroundService(context, intent)
         scope.launch { preferencesRepository.updateOverlayEnabled(true) }
-        Toast.makeText(context, "Status Cat activated! 🐱", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "Đã bật Pet thành công! 🐱", Toast.LENGTH_SHORT).show()
     }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
@@ -132,7 +138,7 @@ fun MainScreen() {
         if (granted) {
             saveApproximateWeatherLocation(context, preferencesRepository, scope)
         } else {
-            Toast.makeText(context, "Location permission was not granted", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Chưa được cấp quyền truy cập vị trí", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -199,6 +205,37 @@ fun MainScreen() {
         }
     }
 
+    // Dropdown States for Testing
+    var selectedPetState by remember { mutableStateOf(PetBehaviorState.IDLE) }
+    var petStateDropdownExpanded by remember { mutableStateOf(false) }
+
+    // Weather Test Selection (Enum Conditions + Lightning Strike)
+    val weatherTestOptions = remember {
+        listOf(
+            "Quang đãng" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_WEATHER, OverlayService.EXTRA_WEATHER, WeatherCondition.CLEAR.name) },
+            "Nhiều mây" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_WEATHER, OverlayService.EXTRA_WEATHER, WeatherCondition.CLOUDY.name) },
+            "Mưa phùn" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_WEATHER, OverlayService.EXTRA_WEATHER, WeatherCondition.RAIN.name) },
+            "Mưa lớn" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_WEATHER, OverlayService.EXTRA_WEATHER, WeatherCondition.HEAVY_RAIN.name) },
+            "Gió mạnh" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_WEATHER, OverlayService.EXTRA_WEATHER, WeatherCondition.WIND.name) },
+            "Dông bão" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_WEATHER, OverlayService.EXTRA_WEATHER, WeatherCondition.STORM.name) },
+            "Tuyết rơi" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_WEATHER, OverlayService.EXTRA_WEATHER, WeatherCondition.SNOW.name) },
+            "Sét đánh trúng Pet ⚡" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_LIGHTNING) }
+        )
+    }
+    var selectedWeatherIndex by remember { mutableStateOf(0) }
+    var weatherDropdownExpanded by remember { mutableStateOf(false) }
+
+    // Event Test Selection
+    val eventTestOptions = remember {
+        listOf(
+            "Mặc định (Tắt sự kiện)" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_EVENT, OverlayService.EXTRA_EVENT, EventEnvironment.DEFAULT.name) },
+            "Lễ Thất Tịch (Ô Thước & Pháo hoa)" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_EVENT, OverlayService.EXTRA_EVENT, EventEnvironment.QIXI.name) },
+            "Sự kiện Bắt Bướm 🦋" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_BUTTERFLY) }
+        )
+    }
+    var selectedEventIndex by remember { mutableStateOf(2) } // Default to Butterfly
+    var eventDropdownExpanded by remember { mutableStateOf(false) }
+
     Scaffold { paddingValues ->
         Column(
             modifier = Modifier
@@ -215,18 +252,18 @@ fun MainScreen() {
             ) {
                 Image(
                     painter = painterResource(R.drawable.status_cat_launcher_art),
-                    contentDescription = "Status Cat logo",
+                    contentDescription = "Logo Pet",
                     modifier = Modifier.size(58.dp)
                 )
                 Column {
                     Text(
-                        text = "Status Cat",
+                        text = "Status Pet",
                         fontSize = 26.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "Battery, Weather & Event Pet",
+                        text = "Pet Theo Dõi Pin & Sự Kiện",
                         fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -253,9 +290,9 @@ fun MainScreen() {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text(text = "Battery Stamina", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(text = "Dung Lượng Pin", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             Text(
-                                text = if (batteryState.isCharging) "⚡ Recharging!" else "🔋 Discharging",
+                                text = if (batteryState.isCharging) "⚡ Đang sạc pin!" else "🔋 Đang dùng pin",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Medium
                             )
@@ -271,11 +308,11 @@ fun MainScreen() {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = when {
-                            batteryState.isCharging -> "Pet mood: ⚡ Full of excitement & energy!"
-                            batteryState.percentage >= 80 -> "Pet mood: 🏃‍♂️ High stamina (walking & playing)"
-                            batteryState.percentage >= 40 -> "Pet mood: 🐱 Normal energy (walking & resting)"
-                            batteryState.percentage >= 15 -> "Pet mood: 😿 Low energy (tired & resting)"
-                            else -> "Pet mood: 💤 Exhausted (sleeping Zzz)"
+                            batteryState.isCharging -> "Tâm trạng Pet: ⚡ Tràn đầy năng lượng & uống sữa!"
+                            batteryState.percentage >= 80 -> "Tâm trạng Pet: 🏃‍♂️ Năng lượng dồi dào (chạy nhảy & đi dạo)"
+                            batteryState.percentage >= 40 -> "Tâm trạng Pet: 🐱 Năng lượng bình thường (đi bộ & nghỉ ngơi)"
+                            batteryState.percentage >= 15 -> "Tâm trạng Pet: 😿 Năng lượng thấp (mệt mỏi)"
+                            else -> "Tâm trạng Pet: 💤 Cạn kiệt pin (ngủ say Zzz)"
                         },
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
@@ -302,9 +339,9 @@ fun MainScreen() {
                 ) {
                     Text(
                         text = if (hasOverlayPermission)
-                            "✓ Overlay Permission Granted"
+                            "✓ Đã cấp quyền hiển thị trên ứng dụng khác"
                         else
-                            "✕ Overlay Permission Required",
+                            "✕ Cần cấp quyền hiển thị trên ứng dụng khác",
                         fontWeight = FontWeight.Bold,
                         color = if (hasOverlayPermission)
                             MaterialTheme.colorScheme.onPrimaryContainer
@@ -315,7 +352,7 @@ fun MainScreen() {
                     if (!hasOverlayPermission) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Button(onClick = { requestOverlayPermission(context) }) {
-                            Text("Grant Permission")
+                            Text("Cấp Quyền Hiển Thị")
                         }
                     }
                 }
@@ -331,7 +368,7 @@ fun MainScreen() {
                 Button(
                     onClick = {
                         if (!hasOverlayPermission) {
-                            Toast.makeText(context, "Please grant overlay permission first", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Vui lòng cấp quyền hiển thị trước", Toast.LENGTH_SHORT).show()
                             requestOverlayPermission(context)
                         } else {
                             startPetOverlay()
@@ -340,7 +377,7 @@ fun MainScreen() {
                     modifier = Modifier.weight(1f),
                     enabled = hasOverlayPermission
                 ) {
-                    Text("Enable Pet")
+                    Text("Bật Pet")
                 }
 
                 OutlinedButton(
@@ -350,11 +387,11 @@ fun MainScreen() {
                         }
                         context.startService(intent)
                         scope.launch { preferencesRepository.updateOverlayEnabled(false) }
-                        Toast.makeText(context, "Pet Sleeping", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Đã tắt Pet", Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Disable Pet")
+                    Text("Tắt Pet")
                 }
             }
 
@@ -364,7 +401,7 @@ fun MainScreen() {
 
             // Virtual Pet Mode Switch
             Text(
-                text = "Cấu Hình Thú Ảo (Virtual Pet AI)",
+                text = "Cấu Hình Pet AI",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.fillMaxWidth()
@@ -388,29 +425,11 @@ fun MainScreen() {
                 )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Show Battery Badge
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Hiện % Pin Cạnh Thú Ảo",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium
-                )
-                Switch(
-                    checked = preferences.showPercentage,
-                    onCheckedChange = { scope.launch { preferencesRepository.updateShowPercentage(it) } }
-                )
-            }
-
             Spacer(modifier = Modifier.height(20.dp))
             HorizontalDivider()
             Spacer(modifier = Modifier.height(16.dp))
 
+            // Weather Section
             Text(
                 text = "Môi Trường Thời Tiết",
                 fontSize = 18.sp,
@@ -423,7 +442,7 @@ fun MainScreen() {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Dùng thời tiết hiện tại", fontSize = 15.sp)
+                Text("Dùng thời tiết thực tế", fontSize = 15.sp)
                 Switch(
                     checked = preferences.weatherEnabled,
                     onCheckedChange = {
@@ -466,57 +485,22 @@ fun MainScreen() {
                     },
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Cập nhật", fontSize = 12.sp)
+                    Text("Cập nhật thời tiết", fontSize = 12.sp)
                 }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = "Thử Thời Tiết",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.fillMaxWidth()
-            )
-            WeatherCondition.values().toList().chunked(2).forEach { rowConditions ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    rowConditions.forEach { condition ->
-                        OutlinedButton(
-                            onClick = {
-                                sendOverlayCommand(
-                                    context,
-                                    OverlayService.ACTION_TEST_WEATHER,
-                                    OverlayService.EXTRA_WEATHER,
-                                    condition.name
-                                )
-                            },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(condition.vietnameseName(), fontSize = 10.sp)
-                        }
-                    }
-                    if (rowConditions.size == 1) Spacer(modifier = Modifier.weight(1f))
-                }
-            }
-            Button(
-                onClick = { sendOverlayCommand(context, OverlayService.ACTION_TEST_LIGHTNING) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Test Sét Đánh")
             }
 
             Spacer(modifier = Modifier.height(20.dp))
             HorizontalDivider()
             Spacer(modifier = Modifier.height(16.dp))
 
+            // Event Mode Configuration
             Text(
                 text = "Môi Trường Sự Kiện",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.fillMaxWidth()
             )
+            Spacer(modifier = Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -529,7 +513,7 @@ fun MainScreen() {
                             },
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text(mode.name, fontSize = 10.sp)
+                            Text(mode.displayName(), fontSize = 11.sp)
                         }
                     } else {
                         OutlinedButton(
@@ -538,76 +522,9 @@ fun MainScreen() {
                             },
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text(mode.name, fontSize = 10.sp)
+                            Text(mode.displayName(), fontSize = 11.sp)
                         }
                     }
-                }
-            }
-
-            Text(
-                text = "Test Sự Kiện",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                EventEnvironment.values().forEach { environment ->
-                    OutlinedButton(
-                        onClick = {
-                            sendOverlayCommand(
-                                context,
-                                OverlayService.ACTION_TEST_EVENT,
-                                OverlayService.EXTRA_EVENT,
-                                environment.name
-                            )
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(environment.name, fontSize = 10.sp)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Button(
-                onClick = { sendOverlayCommand(context, OverlayService.ACTION_TEST_BUTTERFLY) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Test Bắt Bướm 🦋")
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = "Test Tất Cả Trạng Thái Pet",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.fillMaxWidth()
-            )
-            PetBehaviorState.values().toList().chunked(2).forEach { rowStates ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    rowStates.forEach { state ->
-                        OutlinedButton(
-                            onClick = {
-                                sendOverlayCommand(
-                                    context,
-                                    OverlayService.ACTION_TEST_STATE,
-                                    OverlayService.EXTRA_STATE,
-                                    state.name
-                                )
-                            },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(state.name, fontSize = 10.sp)
-                        }
-                    }
-                    if (rowStates.size == 1) Spacer(modifier = Modifier.weight(1f))
                 }
             }
 
@@ -615,7 +532,175 @@ fun MainScreen() {
             HorizontalDivider()
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Clamped Playground Sliders
+            // ==========================================
+            // TEST SECTION: DROPDOWN + SUBMIT BUTTONS
+            // ==========================================
+            Text(
+                text = "Khu Vực Test Chức Năng",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 1. Test Trạng Thái Pet Dropdown
+            Text(
+                text = "Test Trạng Thái Pet",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            ExposedDropdownMenuBox(
+                expanded = petStateDropdownExpanded,
+                onExpandedChange = { petStateDropdownExpanded = !petStateDropdownExpanded },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = selectedPetState.displayName(),
+                    onValueChange = {},
+                    readOnly = true,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = petStateDropdownExpanded) },
+                    modifier = Modifier
+                        .menuAnchor()
+                        .fillMaxWidth()
+                )
+                ExposedDropdownMenu(
+                    expanded = petStateDropdownExpanded,
+                    onDismissRequest = { petStateDropdownExpanded = false }
+                ) {
+                    PetBehaviorState.values().forEach { state ->
+                        DropdownMenuItem(
+                            text = { Text(state.displayName(), fontSize = 14.sp) },
+                            onClick = {
+                                selectedPetState = state
+                                petStateDropdownExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Button(
+                onClick = {
+                    sendOverlayCommand(
+                        context,
+                        OverlayService.ACTION_TEST_STATE,
+                        OverlayService.EXTRA_STATE,
+                        selectedPetState.name
+                    )
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Test Trạng Thái")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 2. Test Thời Tiết & Sét Dropdown
+            Text(
+                text = "Test Thời Tiết & Giông Sét",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            ExposedDropdownMenuBox(
+                expanded = weatherDropdownExpanded,
+                onExpandedChange = { weatherDropdownExpanded = !weatherDropdownExpanded },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = weatherTestOptions[selectedWeatherIndex].first,
+                    onValueChange = {},
+                    readOnly = true,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = weatherDropdownExpanded) },
+                    modifier = Modifier
+                        .menuAnchor()
+                        .fillMaxWidth()
+                )
+                ExposedDropdownMenu(
+                    expanded = weatherDropdownExpanded,
+                    onDismissRequest = { weatherDropdownExpanded = false }
+                ) {
+                    weatherTestOptions.forEachIndexed { index, option ->
+                        DropdownMenuItem(
+                            text = { Text(option.first, fontSize = 14.sp) },
+                            onClick = {
+                                selectedWeatherIndex = index
+                                weatherDropdownExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Button(
+                onClick = {
+                    weatherTestOptions[selectedWeatherIndex].second.invoke()
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Test Thời Tiết")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 3. Test Sự Kiện Dropdown
+            Text(
+                text = "Test Sự Kiện Đặc Biệt",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            ExposedDropdownMenuBox(
+                expanded = eventDropdownExpanded,
+                onExpandedChange = { eventDropdownExpanded = !eventDropdownExpanded },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = eventTestOptions[selectedEventIndex].first,
+                    onValueChange = {},
+                    readOnly = true,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = eventDropdownExpanded) },
+                    modifier = Modifier
+                        .menuAnchor()
+                        .fillMaxWidth()
+                )
+                ExposedDropdownMenu(
+                    expanded = eventDropdownExpanded,
+                    onDismissRequest = { eventDropdownExpanded = false }
+                ) {
+                    eventTestOptions.forEachIndexed { index, option ->
+                        DropdownMenuItem(
+                            text = { Text(option.first, fontSize = 14.sp) },
+                            onClick = {
+                                selectedEventIndex = index
+                                eventDropdownExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Button(
+                onClick = {
+                    eventTestOptions[selectedEventIndex].second.invoke()
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Test Sự Kiện")
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // ==========================================
+            // PLAYGROUND RANGE & SETTINGS SLIDERS
+            // ==========================================
             val density = context.resources.displayMetrics.density
             val petWidthPx = (
                 preferences.overlaySize * density * 2.6f + 24 * density
@@ -624,7 +709,7 @@ fun MainScreen() {
             val minAllowedMaxX = (preferences.minX + petWidthPx).coerceAtMost(screenWidthPx)
 
             Text(
-                text = "Phạm Vi Sân Chơi Status Bar (Width: ${screenWidthPx}px)",
+                text = "Phạm Vi Sân Chơi Status Bar (${screenWidthPx}px)",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.fillMaxWidth()
@@ -686,7 +771,7 @@ fun MainScreen() {
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Kích Thước Thú Ảo: ${preferences.overlaySize} sp",
+                text = "Kích Thước Pet: ${preferences.overlaySize} sp",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.fillMaxWidth()
@@ -769,7 +854,7 @@ private fun sendOverlayCommand(
     extraValue: String? = null
 ) {
     if (!Settings.canDrawOverlays(context)) {
-        Toast.makeText(context, "Overlay permission is required", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "Cần cấp quyền hiển thị trên ứng dụng khác", Toast.LENGTH_SHORT).show()
         return
     }
     val intent = Intent(context, OverlayService::class.java).apply {
@@ -802,14 +887,14 @@ private fun saveApproximateWeatherLocation(
         .maxByOrNull { it.time }
 
     if (location == null) {
-        Toast.makeText(context, "No recent location is available", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "Không tìm thấy tọa độ vị trí gần đây", Toast.LENGTH_SHORT).show()
         return
     }
 
     scope.launch {
         preferencesRepository.updateWeatherLocation(location.latitude, location.longitude)
     }
-    Toast.makeText(context, "Weather location updated", Toast.LENGTH_SHORT).show()
+    Toast.makeText(context, "Đã cập nhật vị trí thời tiết thành công", Toast.LENGTH_SHORT).show()
 }
 
 private suspend fun resolveApproximatePlaceName(
@@ -850,11 +935,36 @@ private suspend fun Geocoder.getFirstAddress(latitude: Double, longitude: Double
 private fun WeatherCondition.vietnameseName(): String = when (this) {
     WeatherCondition.CLEAR -> "Quang đãng"
     WeatherCondition.CLOUDY -> "Nhiều mây"
-    WeatherCondition.RAIN -> "Mưa"
+    WeatherCondition.RAIN -> "Mưa phùn"
     WeatherCondition.HEAVY_RAIN -> "Mưa lớn"
     WeatherCondition.WIND -> "Gió mạnh"
     WeatherCondition.STORM -> "Dông bão"
-    WeatherCondition.SNOW -> "Tuyết"
+    WeatherCondition.SNOW -> "Tuyết rơi"
+}
+
+private fun EventMode.displayName(): String = when (this) {
+    EventMode.AUTO -> "Tự động"
+    EventMode.DEFAULT -> "Mặc định (Tắt)"
+    EventMode.QIXI -> "Lễ Thất Tịch"
+}
+
+private fun PetBehaviorState.displayName(): String = when (this) {
+    PetBehaviorState.IDLE -> "Đứng quan sát"
+    PetBehaviorState.WALK -> "Đi bộ"
+    PetBehaviorState.RUN -> "Chạy nước rút"
+    PetBehaviorState.SIT -> "Ngồi nghỉ"
+    PetBehaviorState.SIT_DOWN -> "Ngồi xuống"
+    PetBehaviorState.LOOK_FRONT -> "Nhìn thẳng phía trước"
+    PetBehaviorState.SLEEP -> "Ngủ say"
+    PetBehaviorState.CHARGING_HAPPY -> "Vui vẻ khi sạc pin"
+    PetBehaviorState.DRINK_START -> "Chuẩn bị uống sữa"
+    PetBehaviorState.DRINK_MILK -> "Uống bát sữa"
+    PetBehaviorState.LIGHTNING_HIT -> "Bị sét giáng trúng ⚡"
+    PetBehaviorState.SHOCKED -> "Cháy đen phục hồi"
+    PetBehaviorState.POKE_JUMP -> "Giật mình khi chạm"
+    PetBehaviorState.ANGRY_LOOK -> "Nhìn giận dỗi"
+    PetBehaviorState.POUNCE -> "Phi thân vồ bướm"
+    PetBehaviorState.CONFUSED -> "Ngơ ngác gãi tai"
 }
 
 private fun formatOneDecimal(value: Double): String =
@@ -862,5 +972,5 @@ private fun formatOneDecimal(value: Double): String =
 
 private fun formatWeatherUpdateTime(timestampMs: Long): String {
     val formatter = SimpleDateFormat("HH:mm", Locale("vi", "VN"))
-    return "Cập nhật ${formatter.format(Date(timestampMs))}"
+    return "Cập nhật lúc ${formatter.format(Date(timestampMs))}"
 }

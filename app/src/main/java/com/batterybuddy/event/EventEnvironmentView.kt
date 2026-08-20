@@ -9,6 +9,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.RectF
 import android.util.AttributeSet
@@ -90,6 +91,17 @@ class EventEnvironmentView @JvmOverloads constructor(
         super.onDetachedFromWindow()
     }
 
+    fun pauseAnimation() {
+        animator.cancel()
+    }
+
+    fun resumeAnimation() {
+        if (!isAttachedToWindow) return
+        if (visibility == VISIBLE && !animator.isStarted) {
+            animator.start()
+        }
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
@@ -100,6 +112,9 @@ class EventEnvironmentView @JvmOverloads constructor(
         drawWeather(canvas, density)
         if (isButterflyVisible) {
             drawButterfly(canvas, density)
+        }
+        if (isLightningStriking) {
+            drawLightningStrike(canvas, density)
         }
     }
 
@@ -371,7 +386,105 @@ class EventEnvironmentView @JvmOverloads constructor(
     private fun updateVisibility() {
         val hasWeatherEffect = weatherCondition != WeatherCondition.CLEAR &&
             weatherCondition != WeatherCondition.CLOUDY
-        visibility = if (environment != EventEnvironment.DEFAULT || hasWeatherEffect || isButterflyVisible) VISIBLE else GONE
+        visibility = if (environment != EventEnvironment.DEFAULT || hasWeatherEffect || isButterflyVisible || isLightningStriking) VISIBLE else GONE
+    }
+
+    private var isLightningStriking = false
+    private var lightningStrikeX = 0f
+    private var lightningProgress = 0f
+    private val mainLightningPath = Path()
+    private val branchLightningPath = Path()
+
+    private val lightningGlowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+        color = Color.parseColor("#FFD700") // Neon Gold Glow
+    }
+    private val lightningCorePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+        color = Color.parseColor("#FFFFFF") // Brilliant White Core
+    }
+    private val lightningFlashPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#40FFF59D") // Soft cartoon ambient flash
+    }
+
+    private var lightningAnimator: ValueAnimator? = null
+
+    fun triggerLightningStrike(targetX: Float, targetY: Float) {
+        lightningStrikeX = targetX
+        isLightningStriking = true
+        lightningAnimator?.cancel()
+        lightningAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 500L
+            addUpdateListener { anim ->
+                lightningProgress = anim.animatedValue as Float
+                buildLightningPaths(targetX, density = resources.displayMetrics.density)
+                invalidate()
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    isLightningStriking = false
+                    updateVisibility()
+                    invalidate()
+                }
+            })
+            start()
+        }
+        updateVisibility()
+    }
+
+    private fun buildLightningPaths(targetX: Float, density: Float) {
+        mainLightningPath.reset()
+        branchLightningPath.reset()
+
+        val h = height.toFloat().coerceAtLeast(40f * density)
+        // Main zigzag bolt from screen top y=0 down to the cat head
+        val startX = targetX + if ((lightningProgress * 14).toInt() % 2 == 0) -8f * density else 8f * density
+        mainLightningPath.moveTo(startX, 0f)
+        mainLightningPath.lineTo(targetX - 10f * density, h * 0.25f)
+        mainLightningPath.lineTo(targetX + 12f * density, h * 0.50f)
+        mainLightningPath.lineTo(targetX - 6f * density, h * 0.72f)
+        mainLightningPath.lineTo(targetX, h * 0.88f)
+
+        // Branch bolt shooting to the side
+        branchLightningPath.moveTo(targetX + 12f * density, h * 0.50f)
+        branchLightningPath.lineTo(targetX + 22f * density, h * 0.65f)
+        branchLightningPath.lineTo(targetX + 30f * density, h * 0.78f)
+    }
+
+    private fun drawLightningStrike(canvas: Canvas, density: Float) {
+        // 1. Ambient Cartoon Flash (first 180ms)
+        if (lightningProgress < 0.35f) {
+            val flashAlpha = ((1f - lightningProgress / 0.35f) * 70).toInt().coerceIn(0, 255)
+            lightningFlashPaint.alpha = flashAlpha
+            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), lightningFlashPaint)
+        }
+
+        // 2. Jagged Cartoon Lightning Bolt with flickering alpha
+        val flickers = (sin(lightningProgress * 12f * Math.PI) > -0.2f)
+        val boltAlpha = if (flickers && lightningProgress < 0.85f) {
+            ((1f - lightningProgress) * 255).toInt().coerceIn(0, 255)
+        } else 0
+
+        if (boltAlpha > 0) {
+            // Outer Gold Glow
+            lightningGlowPaint.strokeWidth = 6.5f * density
+            lightningGlowPaint.alpha = (boltAlpha * 0.85f).toInt()
+            canvas.drawPath(mainLightningPath, lightningGlowPaint)
+            lightningGlowPaint.strokeWidth = 4f * density
+            canvas.drawPath(branchLightningPath, lightningGlowPaint)
+
+            // Inner Pure White Core
+            lightningCorePaint.strokeWidth = 2.4f * density
+            lightningCorePaint.alpha = boltAlpha
+            canvas.drawPath(mainLightningPath, lightningCorePaint)
+            lightningCorePaint.strokeWidth = 1.5f * density
+            canvas.drawPath(branchLightningPath, lightningCorePaint)
+        }
     }
 
     companion object {

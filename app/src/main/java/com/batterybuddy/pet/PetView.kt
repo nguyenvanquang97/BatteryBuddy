@@ -9,12 +9,16 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.View
 import android.view.animation.LinearInterpolator
 import com.batterybuddy.battery.BatteryState
 import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
@@ -81,6 +85,26 @@ class PetView @JvmOverloads constructor(
 
     private val badgeRect = RectF()
     private val spriteRect = RectF()
+    private val auraRect = RectF()
+    private val sparkPath = Path()
+
+    private val auraPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        colorFilter = PorterDuffColorFilter(Color.parseColor("#FFEB3B"), PorterDuff.Mode.SRC_IN)
+    }
+
+    private val electricGlowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#FFD700")
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
+
+    private val electricSparkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
 
     private val spriteFrames: Map<PetBehaviorState, List<Bitmap>> by lazy {
         PetBehaviorState.values().associateWith { state ->
@@ -203,26 +227,55 @@ class PetView @JvmOverloads constructor(
         val aspect = frame.width.toFloat() / frame.height.toFloat()
         val drawWidth = drawHeight * aspect
 
+        val isLightning = behaviorState == PetBehaviorState.LIGHTNING_HIT
+        val shakeX = if (isLightning) sin(animationProgress * 36f * PI).toFloat() * 2.5f * density else 0f
+        val shakeY = if (isLightning) cos(animationProgress * 28f * PI).toFloat() * 2f * density else 0f
+
+        val drawCenterX = centerX + shakeX
+        val drawCenterY = centerY + verticalOffset + shakeY
+
         spriteRect.set(
-            centerX - drawWidth / 2f,
-            centerY - drawHeight / 2f + verticalOffset,
-            centerX + drawWidth / 2f,
-            centerY + drawHeight / 2f + verticalOffset
+            drawCenterX - drawWidth / 2f,
+            drawCenterY - drawHeight / 2f,
+            drawCenterX + drawWidth / 2f,
+            drawCenterY + drawHeight / 2f
         )
 
         canvas.save()
         // Source sprites face left, so mirror them while the pet moves right.
         if (isFacingRight) {
-            canvas.scale(-1f, 1f, centerX, centerY)
+            canvas.scale(-1f, 1f, drawCenterX, drawCenterY)
         }
+
+        // 1. Draw Cartoon Golden Aura / Outline when struck by lightning
+        if (isLightning) {
+            val auraAlpha = ((sin(animationProgress * 20f * PI) * 0.35f + 0.65f) * 230).toInt().coerceIn(0, 255)
+            auraPaint.alpha = auraAlpha
+            val outlineOffset = 2.5f * density
+            val offsets = arrayOf(
+                -outlineOffset to 0f,
+                outlineOffset to 0f,
+                0f to -outlineOffset,
+                0f to outlineOffset,
+                -outlineOffset * 0.7f to -outlineOffset * 0.7f,
+                outlineOffset * 0.7f to -outlineOffset * 0.7f,
+                -outlineOffset * 0.7f to outlineOffset * 0.7f,
+                outlineOffset * 0.7f to outlineOffset * 0.7f
+            )
+            for ((dx, dy) in offsets) {
+                auraRect.set(spriteRect.left + dx, spriteRect.top + dy, spriteRect.right + dx, spriteRect.bottom + dy)
+                canvas.drawBitmap(frame, null, auraRect, auraPaint)
+            }
+        }
+
         previousFrame?.let { oldFrame ->
             val oldAspect = oldFrame.width.toFloat() / oldFrame.height.toFloat()
             val oldDrawWidth = drawHeight * oldAspect
             val oldRect = RectF(
-                centerX - oldDrawWidth / 2f,
-                centerY - drawHeight / 2f + verticalOffset,
-                centerX + oldDrawWidth / 2f,
-                centerY + drawHeight / 2f + verticalOffset
+                drawCenterX - oldDrawWidth / 2f,
+                drawCenterY - drawHeight / 2f,
+                drawCenterX + oldDrawWidth / 2f,
+                drawCenterY + drawHeight / 2f
             )
             spritePaint.alpha = ((1f - stateTransitionProgress) * 255).roundToInt()
             canvas.drawBitmap(oldFrame, null, oldRect, spritePaint)
@@ -230,7 +283,46 @@ class PetView @JvmOverloads constructor(
         spritePaint.alpha = (stateTransitionProgress * 255).roundToInt()
         canvas.drawBitmap(frame, null, spriteRect, spritePaint)
         spritePaint.alpha = 255
+
+        // 2. Draw dynamic cartoon electric sparks crackling around cat
+        if (isLightning) {
+            drawElectricSparks(canvas, spriteRect, density)
+        }
+
         canvas.restore()
+    }
+
+    private fun drawElectricSparks(canvas: Canvas, rect: RectF, density: Float) {
+        val flickers = (sin(animationProgress * 24f * PI) > -0.3f)
+        if (!flickers) return
+
+        val sparkAlpha = ((sin(animationProgress * 30f * PI) * 0.5f + 0.5f) * 255).toInt().coerceIn(0, 255)
+        electricGlowPaint.alpha = sparkAlpha
+        electricSparkPaint.alpha = sparkAlpha
+
+        val w = rect.width()
+        val h = rect.height()
+
+        // 4 Dynamic spark arcs around ears, paws, and body
+        val sparkPoints = arrayOf(
+            floatArrayOf(rect.left + w * 0.25f, rect.top + h * 0.15f, rect.left + w * 0.18f, rect.top + h * 0.05f, rect.left + w * 0.10f, rect.top + h * 0.12f),
+            floatArrayOf(rect.right - w * 0.25f, rect.top + h * 0.20f, rect.right - w * 0.12f, rect.top + h * 0.10f, rect.right - w * 0.05f, rect.top + h * 0.18f),
+            floatArrayOf(rect.left + w * 0.20f, rect.bottom - h * 0.20f, rect.left + w * 0.08f, rect.bottom - h * 0.15f, rect.left + w * 0.15f, rect.bottom - h * 0.05f),
+            floatArrayOf(rect.right - w * 0.20f, rect.bottom - h * 0.25f, rect.right - w * 0.08f, rect.bottom - h * 0.35f, rect.right - w * 0.15f, rect.bottom - h * 0.45f)
+        )
+
+        for (pts in sparkPoints) {
+            sparkPath.reset()
+            sparkPath.moveTo(pts[0], pts[1])
+            sparkPath.lineTo(pts[2], pts[3])
+            sparkPath.lineTo(pts[4], pts[5])
+
+            electricGlowPaint.strokeWidth = 3.5f * density
+            canvas.drawPath(sparkPath, electricGlowPaint)
+
+            electricSparkPaint.strokeWidth = 1.5f * density
+            canvas.drawPath(sparkPath, electricSparkPaint)
+        }
     }
 
     private fun frameIndex(frameCount: Int): Int {
@@ -276,6 +368,19 @@ class PetView @JvmOverloads constructor(
             else -> 3
         }
         return index.coerceAtMost(frameCount - 1)
+    }
+
+    fun pauseAnimation() {
+        spriteAnimator.cancel()
+        stateTransitionAnimator.cancel()
+    }
+
+    fun resumeAnimation() {
+        if (!isAttachedToWindow) return
+        if (!spriteAnimator.isStarted) {
+            spriteAnimator.duration = animationDurationFor(behaviorState)
+            spriteAnimator.start()
+        }
     }
 
     private fun restartAnimation() {

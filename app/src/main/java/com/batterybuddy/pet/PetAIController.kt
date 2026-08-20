@@ -42,6 +42,7 @@ class PetAIController {
     var onButterflySpawn: ((x: Float, y: Float) -> Unit)? = null
     var onButterflyFlee: (() -> Unit)? = null
     var onButterflyDismiss: (() -> Unit)? = null
+    var onLightningStrike: ((x: Float, y: Float) -> Unit)? = null
 
     val isRunning: Boolean
         get() = controllerScope != null
@@ -58,13 +59,32 @@ class PetAIController {
         }
     }
 
-    fun stop() {
+    fun pause() {
         aiJob?.cancel()
         weatherJob?.cancel()
         specialEventJob?.cancel()
         aiJob = null
         weatherJob = null
         specialEventJob = null
+    }
+
+    fun resume() {
+        val scope = controllerScope ?: return
+        if (aiJob == null && specialEventJob == null) {
+            launchAiLoop()
+            if (weatherJob == null) {
+                weatherJob = scope.launch(Dispatchers.Main) {
+                    while (isActive) {
+                        delay(WEATHER_ROLL_INTERVAL_MS)
+                        maybeTriggerLightning()
+                    }
+                }
+            }
+        }
+    }
+
+    fun stop() {
+        pause()
         controllerScope = null
     }
 
@@ -373,6 +393,8 @@ class PetAIController {
         lastLightningAtMs = now
         aiJob?.cancel()
         specialEventJob = scope.launch(Dispatchers.Main) {
+            val strikeX = (currentX + petWidthPx / 2).toFloat()
+            onLightningStrike?.invoke(strikeX, 0f)
             setBehavior(PetBehaviorState.LIGHTNING_HIT)
             delay(LIGHTNING_HIT_DURATION_MS)
             setBehavior(PetBehaviorState.SHOCKED)
@@ -518,19 +540,26 @@ class PetAIController {
             val sprintStep = 5
             val sprintDelay = 14L
 
+            val targetPounceX = if (isFacingRight) {
+                (spawnX - petWidthPx + 28).coerceIn(effMin, effMax)
+            } else {
+                (spawnX - 28).coerceIn(effMin, effMax)
+            }
+
             var reachedClose = false
-            while (currentX != spawnX) {
-                if (!reachedClose && kotlin.math.abs(currentX - spawnX) <= 36) {
+            while (currentX != targetPounceX) {
+                if (!reachedClose && kotlin.math.abs(currentX - targetPounceX) <= 15) {
                     reachedClose = true
                     // 4. Cat POUNCES at butterfly!
                     setBehavior(PetBehaviorState.POUNCE)
                     onButterflyFlee?.invoke()
                     delay(750L)
+                    break
                 }
                 currentX = if (isFacingRight) {
-                    minOf(currentX + sprintStep, spawnX)
+                    minOf(currentX + sprintStep, targetPounceX)
                 } else {
-                    maxOf(currentX - sprintStep, spawnX)
+                    maxOf(currentX - sprintStep, targetPounceX)
                 }
                 onPositionChanged?.invoke(currentX, isFacingRight)
                 delay(sprintDelay)
