@@ -1,5 +1,7 @@
 package com.batterybuddy.event
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Bitmap
@@ -14,6 +16,7 @@ import android.view.View
 import android.view.animation.LinearInterpolator
 import com.batterybuddy.R
 import com.batterybuddy.weather.WeatherCondition
+import kotlin.math.cos
 import kotlin.math.sin
 
 class EventEnvironmentView @JvmOverloads constructor(
@@ -53,6 +56,14 @@ class EventEnvironmentView @JvmOverloads constructor(
             R.drawable.qixi_magpie_04
         ).map(::decode)
     }
+    private val butterflyFrames: List<Bitmap> by lazy {
+        listOf(
+            R.drawable.butterfly_01,
+            R.drawable.butterfly_02,
+            R.drawable.butterfly_03,
+            R.drawable.butterfly_04
+        ).map(::decode)
+    }
 
     private var animationProgress = 0f
     private val animator = ValueAnimator.ofFloat(0f, 1f).apply {
@@ -87,6 +98,9 @@ class EventEnvironmentView @JvmOverloads constructor(
             drawQixiEnvironment(canvas, density)
         }
         drawWeather(canvas, density)
+        if (isButterflyVisible) {
+            drawButterfly(canvas, density)
+        }
     }
 
     private fun drawQixiEnvironment(canvas: Canvas, density: Float) {
@@ -266,10 +280,98 @@ class EventEnvironmentView @JvmOverloads constructor(
         weatherPaint.alpha = 255
     }
 
+    private var isButterflyVisible = false
+    private var butterflyX = 0f
+    private var butterflyY = 0f
+    private var isButterflyFleeing = false
+    private var fleeProgress = 0f
+    private var fleeDirectionRight = true
+    private val butterflyRect = RectF()
+
+    private val fleeAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+        duration = 900L
+        addUpdateListener { anim ->
+            fleeProgress = anim.animatedValue as Float
+            invalidate()
+        }
+        addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+                isButterflyVisible = false
+                isButterflyFleeing = false
+                updateVisibility()
+                invalidate()
+            }
+        })
+    }
+
+    fun spawnButterfly(x: Float, y: Float) {
+        fleeAnimator.cancel()
+        fleeProgress = 0f
+        butterflyX = x
+        butterflyY = y
+        isButterflyVisible = true
+        isButterflyFleeing = false
+        updateVisibility()
+        invalidate()
+    }
+
+    fun fleeButterfly() {
+        if (!isButterflyVisible || isButterflyFleeing) return
+        isButterflyFleeing = true
+        fleeDirectionRight = butterflyX < width / 2f
+        fleeAnimator.start()
+    }
+
+    fun dismissButterfly() {
+        fleeAnimator.cancel()
+        isButterflyVisible = false
+        isButterflyFleeing = false
+        updateVisibility()
+        invalidate()
+    }
+
+    private fun drawButterfly(canvas: Canvas, density: Float) {
+        if (butterflyFrames.isEmpty()) return
+
+        // 4 flight flapping frames cycling rapidly
+        val frameIndex = ((animationProgress * 36f).toInt() % butterflyFrames.size).coerceIn(0, butterflyFrames.size - 1)
+        val frame = butterflyFrames[frameIndex]
+
+        val butterflySize = 28f * density
+        val currentDrawX: Float
+        val currentDrawY: Float
+        val currentAlpha: Int
+
+        if (isButterflyFleeing) {
+            val fleeXOffset = if (fleeDirectionRight) fleeProgress * 120f * density else -fleeProgress * 120f * density
+            val fleeYOffset = -fleeProgress * 80f * density
+            currentDrawX = butterflyX + fleeXOffset
+            currentDrawY = butterflyY + fleeYOffset
+            currentAlpha = ((1f - fleeProgress) * 255).toInt().coerceIn(0, 255)
+        } else {
+            val hoverX = sin(animationProgress * 10f * Math.PI).toFloat() * 3f * density
+            val hoverY = cos(animationProgress * 6f * Math.PI).toFloat() * 3f * density
+            currentDrawX = butterflyX + hoverX
+            currentDrawY = butterflyY + hoverY
+            currentAlpha = 255
+        }
+
+        butterflyRect.set(
+            currentDrawX - butterflySize / 2f,
+            currentDrawY - butterflySize / 2f,
+            currentDrawX + butterflySize / 2f,
+            currentDrawY + butterflySize / 2f
+        )
+
+        bitmapPaint.alpha = currentAlpha
+        canvas.drawBitmap(frame, null, butterflyRect, bitmapPaint)
+        bitmapPaint.alpha = 255
+    }
+
     private fun updateVisibility() {
         val hasWeatherEffect = weatherCondition != WeatherCondition.CLEAR &&
             weatherCondition != WeatherCondition.CLOUDY
-        visibility = if (environment != EventEnvironment.DEFAULT || hasWeatherEffect) VISIBLE else GONE
+        visibility = if (environment != EventEnvironment.DEFAULT || hasWeatherEffect || isButterflyVisible) VISIBLE else GONE
     }
 
     companion object {

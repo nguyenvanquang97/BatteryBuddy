@@ -18,6 +18,16 @@ enum class PetBehaviorState(
         "",
         "Walking around"
     ),
+    RUN(
+        intArrayOf(
+            R.drawable.pet_run_01,
+            R.drawable.pet_run_02,
+            R.drawable.pet_run_03,
+            R.drawable.pet_run_04
+        ),
+        "",
+        "Running fast"
+    ),
     IDLE(
         intArrayOf(
             R.drawable.pet_idle_v2_01,
@@ -137,5 +147,23 @@ enum class PetBehaviorState(
         ),
         "",
         "Staring back angrily"
+    ),
+    POUNCE(
+        intArrayOf(
+            R.drawable.pet_pounce_01,
+            R.drawable.pet_pounce_02,
+            R.drawable.pet_pounce_03,
+            R.drawable.pet_pounce_04
+        ),
+        "!",
+        "Pouncing at butterfly"
+    ),
+    CONFUSED(
+        intArrayOf(
+            R.drawable.pet_confused_01,
+            R.drawable.pet_confused_02
+        ),
+        "?",
+        "Puzzled and confused"
     )
 }

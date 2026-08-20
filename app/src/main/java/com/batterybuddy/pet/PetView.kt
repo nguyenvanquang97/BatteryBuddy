@@ -168,6 +168,7 @@ class PetView @JvmOverloads constructor(
 
         val verticalOffset = when (behaviorState) {
             PetBehaviorState.WALK -> -kotlin.math.abs(fastWave) * 2.5f * density
+            PetBehaviorState.RUN -> -kotlin.math.abs(fastWave) * 1.5f * density
             PetBehaviorState.IDLE -> wave * density
             PetBehaviorState.SIT -> wave * 0.4f * density
             PetBehaviorState.SIT_DOWN -> 0f
@@ -180,6 +181,11 @@ class PetView @JvmOverloads constructor(
             PetBehaviorState.SHOCKED -> wave * 1.2f * density
             PetBehaviorState.POKE_JUMP ->
                 -sin(animationProgress * PI).toFloat() * 12f * density
+            PetBehaviorState.POUNCE ->
+                if (animationProgress in 0.35f..0.75f) {
+                    -sin((animationProgress - 0.35f) / 0.4f * PI).toFloat() * 8f * density
+                } else 0f
+            PetBehaviorState.CONFUSED -> wave * 0.4f * density
             PetBehaviorState.ANGRY_LOOK -> fastWave * 0.4f * density
         }
         val scale = when (behaviorState) {
@@ -190,16 +196,19 @@ class PetView @JvmOverloads constructor(
             PetBehaviorState.POKE_JUMP -> 1f + kotlin.math.abs(wave) * 0.035f
             else -> 1f
         }
-        val drawSize = baseSize * scale
-        spriteRect.set(
-            centerX - drawSize / 2f,
-            centerY - drawSize / 2f + verticalOffset,
-            centerX + drawSize / 2f,
-            centerY + drawSize / 2f + verticalOffset
-        )
-
         val frames = spriteFrames.getValue(behaviorState)
         val frame = frames[frameIndex(frames.size)]
+
+        val drawHeight = baseSize * scale
+        val aspect = frame.width.toFloat() / frame.height.toFloat()
+        val drawWidth = drawHeight * aspect
+
+        spriteRect.set(
+            centerX - drawWidth / 2f,
+            centerY - drawHeight / 2f + verticalOffset,
+            centerX + drawWidth / 2f,
+            centerY + drawHeight / 2f + verticalOffset
+        )
 
         canvas.save()
         // Source sprites face left, so mirror them while the pet moves right.
@@ -207,40 +216,21 @@ class PetView @JvmOverloads constructor(
             canvas.scale(-1f, 1f, centerX, centerY)
         }
         previousFrame?.let { oldFrame ->
+            val oldAspect = oldFrame.width.toFloat() / oldFrame.height.toFloat()
+            val oldDrawWidth = drawHeight * oldAspect
+            val oldRect = RectF(
+                centerX - oldDrawWidth / 2f,
+                centerY - drawHeight / 2f + verticalOffset,
+                centerX + oldDrawWidth / 2f,
+                centerY + drawHeight / 2f + verticalOffset
+            )
             spritePaint.alpha = ((1f - stateTransitionProgress) * 255).roundToInt()
-            canvas.drawBitmap(oldFrame, null, spriteRect, spritePaint)
+            canvas.drawBitmap(oldFrame, null, oldRect, spritePaint)
         }
         spritePaint.alpha = (stateTransitionProgress * 255).roundToInt()
         canvas.drawBitmap(frame, null, spriteRect, spritePaint)
         spritePaint.alpha = 255
         canvas.restore()
-
-        // Draw Status Badge (e.g. Zzz, ⚡, or Battery %)
-        val badgeText = when {
-            behaviorState.badgeText.isNotBlank() -> behaviorState.badgeText
-            showPercentageBadge -> "${batteryState.percentage}%"
-            else -> ""
-        }
-
-        if (badgeText.isNotBlank()) {
-            val badgeX = spriteRect.right - 10 * density
-            val badgeY = spriteRect.top + 12 * density
-
-            val bw = badgeTextPaint.measureText(badgeText) + 8 * density
-            val bh = 14 * density
-
-            badgeRect.set(badgeX - bw / 2f, badgeY - bh, badgeX + bw / 2f, badgeY + 2 * density)
-
-            badgePaint.color = when {
-                batteryState.isCharging -> Color.parseColor("#FFD700") // Gold
-                behaviorState == PetBehaviorState.SLEEP -> Color.parseColor("#7B61FF") // Purple
-                batteryState.percentage < 20 -> Color.parseColor("#FF5252") // Red
-                else -> Color.parseColor("#26A69A") // Teal
-            }
-
-            canvas.drawRoundRect(badgeRect, 8 * density, 8 * density, badgePaint)
-            canvas.drawText(badgeText, badgeX, badgeY - 2 * density, badgeTextPaint)
-        }
     }
 
     private fun frameIndex(frameCount: Int): Int {
@@ -250,13 +240,16 @@ class PetView @JvmOverloads constructor(
             PetBehaviorState.IDLE,
             PetBehaviorState.SIT,
             PetBehaviorState.LOOK_FRONT,
+            PetBehaviorState.CONFUSED,
             PetBehaviorState.SLEEP -> calmFrameIndex(frameCount)
             PetBehaviorState.WALK,
+            PetBehaviorState.RUN,
             PetBehaviorState.SIT_DOWN,
             PetBehaviorState.DRINK_START,
             PetBehaviorState.DRINK_MILK,
             PetBehaviorState.LIGHTNING_HIT,
             PetBehaviorState.SHOCKED,
+            PetBehaviorState.POUNCE,
             PetBehaviorState.POKE_JUMP ->
                 (animationProgress * frameCount).toInt().coerceAtMost(frameCount - 1)
             PetBehaviorState.ANGRY_LOOK -> angryFrameIndex(frameCount)
@@ -306,6 +299,7 @@ class PetView @JvmOverloads constructor(
 
     private fun animationDurationFor(state: PetBehaviorState): Long = when (state) {
         PetBehaviorState.WALK -> WALK_ANIMATION_DURATION_MS
+        PetBehaviorState.RUN -> RUN_ANIMATION_DURATION_MS
         PetBehaviorState.IDLE -> IDLE_ANIMATION_DURATION_MS
         PetBehaviorState.SIT -> SIT_ANIMATION_DURATION_MS
         PetBehaviorState.SIT_DOWN -> SIT_DOWN_ANIMATION_DURATION_MS
@@ -318,10 +312,13 @@ class PetView @JvmOverloads constructor(
         PetBehaviorState.SHOCKED -> SHOCKED_ANIMATION_DURATION_MS
         PetBehaviorState.POKE_JUMP -> POKE_JUMP_ANIMATION_DURATION_MS
         PetBehaviorState.ANGRY_LOOK -> ANGRY_LOOK_ANIMATION_DURATION_MS
+        PetBehaviorState.POUNCE -> POUNCE_ANIMATION_DURATION_MS
+        PetBehaviorState.CONFUSED -> CONFUSED_ANIMATION_DURATION_MS
     }
 
     companion object {
         private const val WALK_ANIMATION_DURATION_MS = 700L
+        private const val RUN_ANIMATION_DURATION_MS = 480L
         private const val IDLE_ANIMATION_DURATION_MS = 3_200L
         private const val SIT_ANIMATION_DURATION_MS = 3_600L
         private const val SIT_DOWN_ANIMATION_DURATION_MS = 700L
@@ -334,6 +331,8 @@ class PetView @JvmOverloads constructor(
         private const val SHOCKED_ANIMATION_DURATION_MS = 1_000L
         private const val POKE_JUMP_ANIMATION_DURATION_MS = 650L
         private const val ANGRY_LOOK_ANIMATION_DURATION_MS = 3_000L
+        private const val POUNCE_ANIMATION_DURATION_MS = 750L
+        private const val CONFUSED_ANIMATION_DURATION_MS = 2_000L
         private const val STATE_TRANSITION_DURATION_MS = 180L
         private const val SPRITE_SIZE_MULTIPLIER = 2.6f
     }

@@ -35,9 +35,13 @@ class PetAIController {
     private var weatherSnapshot: WeatherSnapshot? = null
     private var lastLightningAtMs = 0L
     private var lastPokeAtMs = 0L
+    private var lastButterflyAtMs = 0L
 
     var onPositionChanged: ((x: Int, isFacingRight: Boolean) -> Unit)? = null
     var onStateChanged: ((state: PetBehaviorState) -> Unit)? = null
+    var onButterflySpawn: ((x: Float, y: Float) -> Unit)? = null
+    var onButterflyFlee: (() -> Unit)? = null
+    var onButterflyDismiss: (() -> Unit)? = null
 
     val isRunning: Boolean
         get() = controllerScope != null
@@ -95,6 +99,10 @@ class PetAIController {
         triggerLightning(force = true)
     }
 
+    fun forceButterfly() {
+        triggerButterfly(force = true)
+    }
+
     fun reactToPoke() {
         val scope = controllerScope ?: return
         val now = System.currentTimeMillis()
@@ -141,6 +149,12 @@ class PetAIController {
     private suspend fun decideAndPerformNextAction() {
         val pct = currentBatteryState.percentage
         val isCharging = currentBatteryState.isCharging
+
+        val now = System.currentTimeMillis()
+        if (!isCharging && pct >= 30 && now - lastButterflyAtMs >= BUTTERFLY_COOLDOWN_MS && Random.nextFloat() < BUTTERFLY_SPAWN_CHANCE) {
+            triggerButterfly(force = false)
+            return
+        }
 
         // Determine probabilities based on battery status
         val behavior = when {
@@ -214,7 +228,10 @@ class PetAIController {
                     PetBehaviorState.SHOCKED -> delay(SHOCKED_DURATION_MS)
                     PetBehaviorState.POKE_JUMP -> delay(POKE_JUMP_DURATION_MS)
                     PetBehaviorState.ANGRY_LOOK -> delay(ANGRY_LOOK_DURATION_MS)
-                    PetBehaviorState.WALK -> Unit
+                    PetBehaviorState.POUNCE -> delay(750L)
+                    PetBehaviorState.CONFUSED -> delay(Random.nextLong(2000, 4000))
+                    PetBehaviorState.WALK,
+                    PetBehaviorState.RUN -> Unit
                 }
             }
         }
@@ -245,6 +262,7 @@ class PetAIController {
 
         val isFacingRight = targetX > currentX
         currentFacingRight = isFacingRight
+
         setBehavior(PetBehaviorState.WALK)
 
         val stepDelayMs = when {
@@ -297,7 +315,7 @@ class PetAIController {
     }
 
     private fun setBehavior(state: PetBehaviorState) {
-        if (state != PetBehaviorState.WALK) {
+        if (state != PetBehaviorState.WALK && state != PetBehaviorState.RUN && state != PetBehaviorState.POUNCE) {
             val safeX = safeStationaryX(currentX)
             if (safeX != currentX) {
                 currentX = safeX
@@ -443,6 +461,99 @@ class PetAIController {
         return candidates.minByOrNull { kotlin.math.abs(it - x) } ?: x
     }
 
+    private fun triggerButterfly(force: Boolean, targetX: Int? = null) {
+        val scope = controllerScope ?: return
+        if (force) {
+            specialEventJob?.cancel()
+        } else if (specialEventJob?.isActive == true) {
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (!force && now - lastButterflyAtMs < BUTTERFLY_COOLDOWN_MS) return
+
+        lastButterflyAtMs = now
+        aiJob?.cancel()
+        specialEventJob = scope.launch(Dispatchers.Main) {
+            val effMin = effectiveMinX()
+            val effMax = effectiveMaxX()
+
+            val spawnX = targetX ?: run {
+                val leftSpace = (currentX - effMin).coerceAtLeast(0)
+                val rightSpace = (effMax - currentX).coerceAtLeast(0)
+
+                // Choose side with more available running room
+                val goRight = if (leftSpace >= 300 && rightSpace >= 300) {
+                    Random.nextBoolean()
+                } else {
+                    rightSpace >= leftSpace
+                }
+
+                val availableSpace = if (goRight) rightSpace else leftSpace
+                // Aim for 60% to 90% of available space (at least 280px if possible)
+                val minDistance = minOf(280, availableSpace)
+                val maxDistance = availableSpace.coerceAtLeast(minDistance)
+                val distance = if (maxDistance > minDistance) {
+                    Random.nextInt(minDistance, maxDistance + 1)
+                } else {
+                    minDistance
+                }
+
+                val rawX = if (goRight) currentX + distance else currentX - distance
+                rawX.coerceIn(effMin, effMax)
+            }
+
+            // 1. Butterfly appears
+            onButterflySpawn?.invoke(spawnX.toFloat(), 8f)
+
+            // 2. Cat turns to face butterfly and gets surprised
+            val isFacingRight = spawnX > currentX
+            currentFacingRight = isFacingRight
+            onPositionChanged?.invoke(currentX, currentFacingRight)
+
+            setBehavior(PetBehaviorState.POKE_JUMP)
+            delay(BUTTERFLY_SURPRISE_DURATION_MS)
+
+            // 3. Cat runs quickly towards butterfly (sprint)
+            setBehavior(PetBehaviorState.RUN)
+            val sprintStep = 5
+            val sprintDelay = 14L
+
+            var reachedClose = false
+            while (currentX != spawnX) {
+                if (!reachedClose && kotlin.math.abs(currentX - spawnX) <= 36) {
+                    reachedClose = true
+                    // 4. Cat POUNCES at butterfly!
+                    setBehavior(PetBehaviorState.POUNCE)
+                    onButterflyFlee?.invoke()
+                    delay(750L)
+                }
+                currentX = if (isFacingRight) {
+                    minOf(currentX + sprintStep, spawnX)
+                } else {
+                    maxOf(currentX - sprintStep, spawnX)
+                }
+                onPositionChanged?.invoke(currentX, isFacingRight)
+                delay(sprintDelay)
+            }
+
+            if (!reachedClose) {
+                setBehavior(PetBehaviorState.POUNCE)
+                onButterflyFlee?.invoke()
+                delay(750L)
+            }
+
+            // 5. Cat sits up scratching its ear in confusion
+            setBehavior(PetBehaviorState.CONFUSED)
+            delay(2200L)
+
+            // 6. Dismiss butterfly
+            onButterflyDismiss?.invoke()
+
+            // 7. Resume normal AI
+            launchAiLoop()
+        }
+    }
+
     companion object {
         private const val SIT_DOWN_DURATION_MS = 700L
         private const val DRINK_START_DURATION_MS = 800L
@@ -455,5 +566,9 @@ class PetAIController {
         private const val POKE_COOLDOWN_MS = 500L
         private const val CROSS_CUTOUT_CHANCE = 0.65f
         private const val MIN_WALK_DISTANCE_PX = 28
+        private const val BUTTERFLY_COOLDOWN_MS = 60_000L
+        private const val BUTTERFLY_SPAWN_CHANCE = 0.12f
+        private const val BUTTERFLY_SURPRISE_DURATION_MS = 900L
+        private const val BUTTERFLY_LOOK_DURATION_MS = 2_200L
     }
 }

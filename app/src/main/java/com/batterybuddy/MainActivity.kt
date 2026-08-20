@@ -571,6 +571,15 @@ fun MainScreen() {
                 }
             }
 
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Button(
+                onClick = { sendOverlayCommand(context, OverlayService.ACTION_TEST_BUTTERFLY) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Test Bắt Bướm 🦋")
+            }
+
             Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = "Test Tất Cả Trạng Thái Pet",

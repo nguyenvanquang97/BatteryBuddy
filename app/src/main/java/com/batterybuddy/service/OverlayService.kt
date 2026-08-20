@@ -74,6 +74,7 @@ class OverlayService : Service() {
         const val ACTION_TEST_STATE = "com.batterybuddy.action.TEST_STATE"
         const val ACTION_TEST_WEATHER = "com.batterybuddy.action.TEST_WEATHER"
         const val ACTION_TEST_LIGHTNING = "com.batterybuddy.action.TEST_LIGHTNING"
+        const val ACTION_TEST_BUTTERFLY = "com.batterybuddy.action.TEST_BUTTERFLY"
         const val ACTION_REFRESH_WEATHER = "com.batterybuddy.action.REFRESH_WEATHER"
         const val ACTION_TEST_EVENT = "com.batterybuddy.action.TEST_EVENT"
         const val EXTRA_STATE = "state"
@@ -136,6 +137,24 @@ class OverlayService : Service() {
                 petView?.behaviorState = newState
             }
         }
+
+        petAIController.onButterflySpawn = { x, y ->
+            serviceScope.launch(Dispatchers.Main) {
+                eventEnvironmentView?.spawnButterfly(x, y)
+            }
+        }
+
+        petAIController.onButterflyFlee = {
+            serviceScope.launch(Dispatchers.Main) {
+                eventEnvironmentView?.fleeButterfly()
+            }
+        }
+
+        petAIController.onButterflyDismiss = {
+            serviceScope.launch(Dispatchers.Main) {
+                eventEnvironmentView?.dismissButterfly()
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -160,6 +179,10 @@ class OverlayService : Service() {
                     ACTION_TEST_LIGHTNING -> {
                         petAIController.start(serviceScope)
                         petAIController.forceLightning()
+                    }
+                    ACTION_TEST_BUTTERFLY -> {
+                        petAIController.start(serviceScope)
+                        petAIController.forceButterfly()
                     }
                     ACTION_REFRESH_WEATHER -> refreshWeather(force = true)
                     ACTION_TEST_EVENT -> intent.getStringExtra(EXTRA_EVENT)
