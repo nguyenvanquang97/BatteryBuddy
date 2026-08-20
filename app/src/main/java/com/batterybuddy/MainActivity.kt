@@ -126,24 +126,6 @@ fun MainScreen() {
         Toast.makeText(context, "Status Cat activated! 🐱", Toast.LENGTH_SHORT).show()
     }
 
-    var hasNotificationPermission by remember {
-        mutableStateOf(isNotificationPermissionGranted(context))
-    }
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasNotificationPermission = granted
-        if (granted) {
-            startPetOverlay()
-        } else {
-            Toast.makeText(
-                context,
-                "Notification permission is required to keep Status Cat running",
-                Toast.LENGTH_LONG
-            ).show()
-        }
-    }
-
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -163,7 +145,6 @@ fun MainScreen() {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 hasOverlayPermission = Settings.canDrawOverlays(context)
-                hasNotificationPermission = isNotificationPermissionGranted(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -337,29 +318,6 @@ fun MainScreen() {
                             Text("Grant Permission")
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = if (hasNotificationPermission)
-                            "✓ Notification Permission Granted"
-                        else
-                            "✕ Notification Permission Required",
-                        fontWeight = FontWeight.Bold,
-                        color = if (hasNotificationPermission)
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        else
-                            MaterialTheme.colorScheme.error
-                    )
-                    if (!hasNotificationPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedButton(
-                            onClick = {
-                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            }
-                        ) {
-                            Text("Grant Notifications")
-                        }
-                    }
                 }
             }
 
@@ -375,10 +333,6 @@ fun MainScreen() {
                         if (!hasOverlayPermission) {
                             Toast.makeText(context, "Please grant overlay permission first", Toast.LENGTH_SHORT).show()
                             requestOverlayPermission(context)
-                        } else if (!hasNotificationPermission &&
-                            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                        ) {
-                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                         } else {
                             startPetOverlay()
                         }
@@ -798,13 +752,6 @@ private fun requestOverlayPermission(context: Context) {
     )
     context.startActivity(intent)
 }
-
-private fun isNotificationPermissionGranted(context: Context): Boolean =
-    Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-        ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.POST_NOTIFICATIONS
-        ) == PackageManager.PERMISSION_GRANTED
 
 private fun sendOverlayCommand(
     context: Context,

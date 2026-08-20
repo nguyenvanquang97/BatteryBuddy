@@ -359,9 +359,13 @@ class OverlayService : Service() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 channelName,
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_MIN
             ).apply {
                 description = "Running virtual pet overlay in background"
+                setShowBadge(false)
+                setSound(null, null)
+                enableLights(false)
+                enableVibration(false)
             }
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(channel)
@@ -371,7 +375,8 @@ class OverlayService : Service() {
             .setContentTitle("Status Cat Active 🐱")
             .setContentText("Status bar virtual pet is playing")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setSilent(true)
             .setOngoing(true)
             .build()
 
