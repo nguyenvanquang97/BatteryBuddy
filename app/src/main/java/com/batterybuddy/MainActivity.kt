@@ -17,7 +17,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,26 +27,33 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -205,11 +214,11 @@ fun MainScreen() {
         }
     }
 
-    // Dropdown States for Testing
+    // Modal States for Testing
     var selectedPetState by remember { mutableStateOf(PetBehaviorState.IDLE) }
-    var petStateDropdownExpanded by remember { mutableStateOf(false) }
+    var showPetStateModal by remember { mutableStateOf(false) }
 
-    // Weather Test Selection (Enum Conditions + Lightning Strike)
+    // Weather Test Selection
     val weatherTestOptions = remember {
         listOf(
             "Quang đãng" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_WEATHER, OverlayService.EXTRA_WEATHER, WeatherCondition.CLEAR.name) },
@@ -218,23 +227,24 @@ fun MainScreen() {
             "Mưa lớn" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_WEATHER, OverlayService.EXTRA_WEATHER, WeatherCondition.HEAVY_RAIN.name) },
             "Gió mạnh" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_WEATHER, OverlayService.EXTRA_WEATHER, WeatherCondition.WIND.name) },
             "Dông bão" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_WEATHER, OverlayService.EXTRA_WEATHER, WeatherCondition.STORM.name) },
-            "Tuyết rơi" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_WEATHER, OverlayService.EXTRA_WEATHER, WeatherCondition.SNOW.name) },
-            "Sét đánh trúng Pet ⚡" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_LIGHTNING) }
+            "Tuyết rơi" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_WEATHER, OverlayService.EXTRA_WEATHER, WeatherCondition.SNOW.name) }
         )
     }
     var selectedWeatherIndex by remember { mutableStateOf(0) }
-    var weatherDropdownExpanded by remember { mutableStateOf(false) }
+    var showWeatherModal by remember { mutableStateOf(false) }
 
     // Event Test Selection
     val eventTestOptions = remember {
         listOf(
-            "Mặc định (Tắt sự kiện)" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_EVENT, OverlayService.EXTRA_EVENT, EventEnvironment.DEFAULT.name) },
+            "Lễ Quốc Khánh 2/9 (Mèo vẫy cờ 🇻🇳)" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_EVENT, OverlayService.EXTRA_EVENT, EventEnvironment.NATIONAL_DAY.name) },
+            "Sự kiện Bắt Bướm 🦋" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_BUTTERFLY) },
+            "Sự kiện Sét Đánh Trúng Pet ⚡" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_LIGHTNING) },
             "Lễ Thất Tịch (Ô Thước & Pháo hoa)" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_EVENT, OverlayService.EXTRA_EVENT, EventEnvironment.QIXI.name) },
-            "Sự kiện Bắt Bướm 🦋" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_BUTTERFLY) }
+            "Mặc định (Tắt sự kiện)" to { sendOverlayCommand(context, OverlayService.ACTION_TEST_EVENT, OverlayService.EXTRA_EVENT, EventEnvironment.DEFAULT.name) }
         )
     }
-    var selectedEventIndex by remember { mutableStateOf(2) } // Default to Butterfly
-    var eventDropdownExpanded by remember { mutableStateOf(false) }
+    var selectedEventIndex by remember { mutableStateOf(0) }
+    var showEventModal by remember { mutableStateOf(false) }
 
     Scaffold { paddingValues ->
         Column(
@@ -501,31 +511,34 @@ fun MainScreen() {
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                EventMode.values().forEach { mode ->
-                    if (preferences.eventMode == mode) {
-                        Button(
-                            onClick = {
-                                scope.launch { preferencesRepository.updateEventMode(mode) }
-                            },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(mode.displayName(), fontSize = 11.sp)
-                        }
-                    } else {
-                        OutlinedButton(
-                            onClick = {
-                                scope.launch { preferencesRepository.updateEventMode(mode) }
-                            },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(mode.displayName(), fontSize = 11.sp)
+            EventMode.values().toList().chunked(2).forEach { rowModes ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rowModes.forEach { mode ->
+                        if (preferences.eventMode == mode) {
+                            Button(
+                                onClick = {
+                                    scope.launch { preferencesRepository.updateEventMode(mode) }
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(mode.displayName(), fontSize = 13.sp, maxLines = 1)
+                            }
+                        } else {
+                            OutlinedButton(
+                                onClick = {
+                                    scope.launch { preferencesRepository.updateEventMode(mode) }
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(mode.displayName(), fontSize = 13.sp, maxLines = 1)
+                            }
                         }
                     }
                 }
+                Spacer(modifier = Modifier.height(6.dp))
             }
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -534,6 +547,8 @@ fun MainScreen() {
 
             // ==========================================
             // TEST SECTION: DROPDOWN + SUBMIT BUTTONS
+            // ==========================================
+            // TEST SECTION: MODAL BOTTOM SHEET + SUBMIT BUTTONS
             // ==========================================
             Text(
                 text = "Khu Vực Test Chức Năng",
@@ -544,7 +559,7 @@ fun MainScreen() {
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // 1. Test Trạng Thái Pet Dropdown
+            // 1. Test Trạng Thái Pet Modal Selector
             Text(
                 text = "Test Trạng Thái Pet",
                 fontSize = 15.sp,
@@ -552,36 +567,12 @@ fun MainScreen() {
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(modifier = Modifier.height(6.dp))
-            ExposedDropdownMenuBox(
-                expanded = petStateDropdownExpanded,
-                onExpandedChange = { petStateDropdownExpanded = !petStateDropdownExpanded },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedTextField(
-                    value = selectedPetState.displayName(),
-                    onValueChange = {},
-                    readOnly = true,
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = petStateDropdownExpanded) },
-                    modifier = Modifier
-                        .menuAnchor()
-                        .fillMaxWidth()
-                )
-                ExposedDropdownMenu(
-                    expanded = petStateDropdownExpanded,
-                    onDismissRequest = { petStateDropdownExpanded = false }
-                ) {
-                    PetBehaviorState.values().forEach { state ->
-                        DropdownMenuItem(
-                            text = { Text(state.displayName(), fontSize = 14.sp) },
-                            onClick = {
-                                selectedPetState = state
-                                petStateDropdownExpanded = false
-                            }
-                        )
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(6.dp))
+            SelectionField(
+                label = "Trạng thái đang chọn",
+                value = "${selectedPetState.emoji()}  ${selectedPetState.displayName()}",
+                onClick = { showPetStateModal = true }
+            )
+            Spacer(modifier = Modifier.height(8.dp))
             Button(
                 onClick = {
                     sendOverlayCommand(
@@ -598,7 +589,7 @@ fun MainScreen() {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 2. Test Thời Tiết & Sét Dropdown
+            // 2. Test Thời Tiết & Sét Modal Selector
             Text(
                 text = "Test Thời Tiết & Giông Sét",
                 fontSize = 15.sp,
@@ -606,36 +597,12 @@ fun MainScreen() {
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(modifier = Modifier.height(6.dp))
-            ExposedDropdownMenuBox(
-                expanded = weatherDropdownExpanded,
-                onExpandedChange = { weatherDropdownExpanded = !weatherDropdownExpanded },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedTextField(
-                    value = weatherTestOptions[selectedWeatherIndex].first,
-                    onValueChange = {},
-                    readOnly = true,
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = weatherDropdownExpanded) },
-                    modifier = Modifier
-                        .menuAnchor()
-                        .fillMaxWidth()
-                )
-                ExposedDropdownMenu(
-                    expanded = weatherDropdownExpanded,
-                    onDismissRequest = { weatherDropdownExpanded = false }
-                ) {
-                    weatherTestOptions.forEachIndexed { index, option ->
-                        DropdownMenuItem(
-                            text = { Text(option.first, fontSize = 14.sp) },
-                            onClick = {
-                                selectedWeatherIndex = index
-                                weatherDropdownExpanded = false
-                            }
-                        )
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(6.dp))
+            SelectionField(
+                label = "Thời tiết đang chọn",
+                value = weatherTestOptions[selectedWeatherIndex].first,
+                onClick = { showWeatherModal = true }
+            )
+            Spacer(modifier = Modifier.height(8.dp))
             Button(
                 onClick = {
                     weatherTestOptions[selectedWeatherIndex].second.invoke()
@@ -647,7 +614,7 @@ fun MainScreen() {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 3. Test Sự Kiện Dropdown
+            // 3. Test Sự Kiện Modal Selector
             Text(
                 text = "Test Sự Kiện Đặc Biệt",
                 fontSize = 15.sp,
@@ -655,36 +622,12 @@ fun MainScreen() {
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(modifier = Modifier.height(6.dp))
-            ExposedDropdownMenuBox(
-                expanded = eventDropdownExpanded,
-                onExpandedChange = { eventDropdownExpanded = !eventDropdownExpanded },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedTextField(
-                    value = eventTestOptions[selectedEventIndex].first,
-                    onValueChange = {},
-                    readOnly = true,
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = eventDropdownExpanded) },
-                    modifier = Modifier
-                        .menuAnchor()
-                        .fillMaxWidth()
-                )
-                ExposedDropdownMenu(
-                    expanded = eventDropdownExpanded,
-                    onDismissRequest = { eventDropdownExpanded = false }
-                ) {
-                    eventTestOptions.forEachIndexed { index, option ->
-                        DropdownMenuItem(
-                            text = { Text(option.first, fontSize = 14.sp) },
-                            onClick = {
-                                selectedEventIndex = index
-                                eventDropdownExpanded = false
-                            }
-                        )
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(6.dp))
+            SelectionField(
+                label = "Sự kiện đang chọn",
+                value = eventTestOptions[selectedEventIndex].first,
+                onClick = { showEventModal = true }
+            )
+            Spacer(modifier = Modifier.height(8.dp))
             Button(
                 onClick = {
                     eventTestOptions[selectedEventIndex].second.invoke()
@@ -782,6 +725,161 @@ fun MainScreen() {
                 valueRange = 8f..42f,
                 modifier = Modifier.fillMaxWidth()
             )
+        }
+
+        // Modal Bottom Sheets for Testing
+        if (showPetStateModal) {
+            SelectionModalBottomSheet(
+                title = "Chọn Trạng Thái Pet Test",
+                items = PetBehaviorState.values().toList(),
+                selectedItem = selectedPetState,
+                itemLabel = { it.displayName() },
+                itemIcon = { it.emoji() },
+                onItemSelected = { selectedPetState = it },
+                onDismissRequest = { showPetStateModal = false }
+            )
+        }
+
+        if (showWeatherModal) {
+            SelectionModalBottomSheet(
+                title = "Chọn Thời Tiết & Giông Sét Test",
+                items = weatherTestOptions.indices.toList(),
+                selectedItem = selectedWeatherIndex,
+                itemLabel = { weatherTestOptions[it].first },
+                itemIcon = null,
+                onItemSelected = { selectedWeatherIndex = it },
+                onDismissRequest = { showWeatherModal = false }
+            )
+        }
+
+        if (showEventModal) {
+            SelectionModalBottomSheet(
+                title = "Chọn Sự Kiện Đặc Biệt Test",
+                items = eventTestOptions.indices.toList(),
+                selectedItem = selectedEventIndex,
+                itemLabel = { eventTestOptions[it].first },
+                itemIcon = null,
+                onItemSelected = { selectedEventIndex = it },
+                onDismissRequest = { showEventModal = false }
+            )
+        }
+    }
+}
+
+@Composable
+private fun SelectionField(
+    label: String,
+    value: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = label,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = value,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun <T> SelectionModalBottomSheet(
+    title: String,
+    items: List<T>,
+    selectedItem: T,
+    itemLabel: (T) -> String,
+    itemIcon: ((T) -> String)?,
+    onItemSelected: (T) -> Unit,
+    onDismissRequest: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = { BottomSheetDefaults.DragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 36.dp)
+        ) {
+            Text(
+                text = title,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = 14.dp)
+            )
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 440.dp)
+            ) {
+                items(items) { item ->
+                    val isSelected = item == selectedItem
+                    Surface(
+                        onClick = {
+                            onItemSelected(item)
+                            onDismissRequest()
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 3.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            if (itemIcon != null) {
+                                Text(itemIcon(item), fontSize = 20.sp)
+                            }
+                            Text(
+                                text = itemLabel(item),
+                                fontSize = 15.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -946,6 +1044,7 @@ private fun EventMode.displayName(): String = when (this) {
     EventMode.AUTO -> "Tự động"
     EventMode.DEFAULT -> "Mặc định (Tắt)"
     EventMode.QIXI -> "Lễ Thất Tịch"
+    EventMode.NATIONAL_DAY -> "Lễ Quốc Khánh 2/9"
 }
 
 private fun PetBehaviorState.displayName(): String = when (this) {
@@ -965,6 +1064,29 @@ private fun PetBehaviorState.displayName(): String = when (this) {
     PetBehaviorState.ANGRY_LOOK -> "Nhìn giận dỗi"
     PetBehaviorState.POUNCE -> "Phi thân vồ bướm"
     PetBehaviorState.CONFUSED -> "Ngơ ngác gãi tai"
+    PetBehaviorState.FLAG_WAVE -> "Vẫy cờ Quốc Khánh 🇻🇳"
+    PetBehaviorState.FLAG_WALK -> "Diễu hành cờ 2/9 🇻🇳"
+}
+
+private fun PetBehaviorState.emoji(): String = when (this) {
+    PetBehaviorState.IDLE -> "👀"
+    PetBehaviorState.WALK -> "🐾"
+    PetBehaviorState.RUN -> "🏃"
+    PetBehaviorState.SIT -> "🐱"
+    PetBehaviorState.SIT_DOWN -> "🐾"
+    PetBehaviorState.LOOK_FRONT -> "✨"
+    PetBehaviorState.SLEEP -> "💤"
+    PetBehaviorState.CHARGING_HAPPY -> "⚡"
+    PetBehaviorState.DRINK_START -> "🥛"
+    PetBehaviorState.DRINK_MILK -> "🥛"
+    PetBehaviorState.LIGHTNING_HIT -> "⚡"
+    PetBehaviorState.SHOCKED -> "💥"
+    PetBehaviorState.POKE_JUMP -> "🗯️"
+    PetBehaviorState.ANGRY_LOOK -> "😾"
+    PetBehaviorState.POUNCE -> "🦋"
+    PetBehaviorState.CONFUSED -> "❓"
+    PetBehaviorState.FLAG_WAVE -> "🇻🇳"
+    PetBehaviorState.FLAG_WALK -> "🇻🇳"
 }
 
 private fun formatOneDecimal(value: Double): String =

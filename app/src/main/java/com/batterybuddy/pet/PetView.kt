@@ -211,6 +211,8 @@ class PetView @JvmOverloads constructor(
                 } else 0f
             PetBehaviorState.CONFUSED -> wave * 0.4f * density
             PetBehaviorState.ANGRY_LOOK -> fastWave * 0.4f * density
+            PetBehaviorState.FLAG_WAVE -> wave * 0.8f * density
+            PetBehaviorState.FLAG_WALK -> -kotlin.math.abs(fastWave) * 2f * density
         }
         val scale = when (behaviorState) {
             PetBehaviorState.SLEEP -> 1f + wave * 0.015f
@@ -329,19 +331,22 @@ class PetView @JvmOverloads constructor(
         if (frameCount <= 1) return 0
 
         return when (behaviorState) {
+            PetBehaviorState.WALK,
+            PetBehaviorState.RUN,
+            PetBehaviorState.FLAG_WALK ->
+                ((animationProgress * frameCount).toInt() % frameCount)
             PetBehaviorState.IDLE,
             PetBehaviorState.SIT,
             PetBehaviorState.LOOK_FRONT,
             PetBehaviorState.CONFUSED,
             PetBehaviorState.SLEEP -> calmFrameIndex(frameCount)
-            PetBehaviorState.WALK,
-            PetBehaviorState.RUN,
             PetBehaviorState.SIT_DOWN,
             PetBehaviorState.DRINK_START,
             PetBehaviorState.DRINK_MILK,
             PetBehaviorState.LIGHTNING_HIT,
             PetBehaviorState.SHOCKED,
             PetBehaviorState.POUNCE,
+            PetBehaviorState.FLAG_WAVE,
             PetBehaviorState.POKE_JUMP ->
                 (animationProgress * frameCount).toInt().coerceAtMost(frameCount - 1)
             PetBehaviorState.ANGRY_LOOK -> angryFrameIndex(frameCount)
@@ -419,6 +424,8 @@ class PetView @JvmOverloads constructor(
         PetBehaviorState.ANGRY_LOOK -> ANGRY_LOOK_ANIMATION_DURATION_MS
         PetBehaviorState.POUNCE -> POUNCE_ANIMATION_DURATION_MS
         PetBehaviorState.CONFUSED -> CONFUSED_ANIMATION_DURATION_MS
+        PetBehaviorState.FLAG_WAVE -> FLAG_WAVE_ANIMATION_DURATION_MS
+        PetBehaviorState.FLAG_WALK -> FLAG_WALK_ANIMATION_DURATION_MS
     }
 
     companion object {
@@ -438,6 +445,8 @@ class PetView @JvmOverloads constructor(
         private const val ANGRY_LOOK_ANIMATION_DURATION_MS = 3_000L
         private const val POUNCE_ANIMATION_DURATION_MS = 750L
         private const val CONFUSED_ANIMATION_DURATION_MS = 2_000L
+        private const val FLAG_WAVE_ANIMATION_DURATION_MS = 1_500L
+        private const val FLAG_WALK_ANIMATION_DURATION_MS = 700L
         private const val STATE_TRANSITION_DURATION_MS = 180L
         private const val SPRITE_SIZE_MULTIPLIER = 2.6f
     }

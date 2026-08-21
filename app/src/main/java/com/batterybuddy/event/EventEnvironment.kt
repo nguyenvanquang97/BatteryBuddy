@@ -2,11 +2,13 @@ package com.batterybuddy.event
 
 enum class EventEnvironment {
     DEFAULT,
-    QIXI
+    QIXI,
+    NATIONAL_DAY
 }
 
 enum class EventMode {
     AUTO,
     DEFAULT,
-    QIXI
+    QIXI,
+    NATIONAL_DAY
 }

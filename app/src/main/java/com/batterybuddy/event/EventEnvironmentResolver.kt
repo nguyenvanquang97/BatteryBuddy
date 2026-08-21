@@ -22,15 +22,20 @@ object EventEnvironmentResolver {
     ): EventEnvironment = when (mode) {
         EventMode.DEFAULT -> EventEnvironment.DEFAULT
         EventMode.QIXI -> EventEnvironment.QIXI
+        EventMode.NATIONAL_DAY -> EventEnvironment.NATIONAL_DAY
         EventMode.AUTO -> {
-            val utcOffsetHours = zoneId.rules
-                .getOffset(date.atTime(12, 0))
-                .totalSeconds / 3600.0
-            val lunarDate = VietnameseLunarCalendar.fromSolar(date, utcOffsetHours)
-            if (lunarDate.day == 7 && lunarDate.month == 7 && !lunarDate.isLeapMonth) {
-                EventEnvironment.QIXI
+            if (date.monthValue == 9 && date.dayOfMonth in 1..3) {
+                EventEnvironment.NATIONAL_DAY
             } else {
-                EventEnvironment.DEFAULT
+                val utcOffsetHours = zoneId.rules
+                    .getOffset(date.atTime(12, 0))
+                    .totalSeconds / 3600.0
+                val lunarDate = VietnameseLunarCalendar.fromSolar(date, utcOffsetHours)
+                if (lunarDate.day == 7 && lunarDate.month == 7 && !lunarDate.isLeapMonth) {
+                    EventEnvironment.QIXI
+                } else {
+                    EventEnvironment.DEFAULT
+                }
             }
         }
     }

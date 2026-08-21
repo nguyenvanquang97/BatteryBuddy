@@ -1,6 +1,7 @@
 package com.batterybuddy.pet
 
 import com.batterybuddy.battery.BatteryState
+import com.batterybuddy.event.EventEnvironment
 import com.batterybuddy.weather.LightningPolicy
 import com.batterybuddy.weather.WeatherSnapshot
 import kotlinx.coroutines.CoroutineScope
@@ -12,6 +13,8 @@ import kotlinx.coroutines.launch
 import kotlin.random.Random
 
 class PetAIController {
+
+    var currentEnvironment: EventEnvironment = EventEnvironment.DEFAULT
 
     var minX: Int = 10
     var maxX: Int = 300
@@ -176,6 +179,12 @@ class PetAIController {
             return
         }
 
+        if (!isCharging && currentEnvironment == EventEnvironment.NATIONAL_DAY && Random.nextFloat() < 0.45f) {
+            setBehavior(PetBehaviorState.FLAG_WAVE)
+            delay(Random.nextLong(3500, 6000))
+            return
+        }
+
         // Determine probabilities based on battery status
         val behavior = when {
             isCharging -> {
@@ -250,6 +259,8 @@ class PetAIController {
                     PetBehaviorState.ANGRY_LOOK -> delay(ANGRY_LOOK_DURATION_MS)
                     PetBehaviorState.POUNCE -> delay(750L)
                     PetBehaviorState.CONFUSED -> delay(Random.nextLong(2000, 4000))
+                    PetBehaviorState.FLAG_WAVE -> delay(Random.nextLong(3500, 6000))
+                    PetBehaviorState.FLAG_WALK,
                     PetBehaviorState.WALK,
                     PetBehaviorState.RUN -> Unit
                 }
@@ -283,7 +294,12 @@ class PetAIController {
         val isFacingRight = targetX > currentX
         currentFacingRight = isFacingRight
 
-        setBehavior(PetBehaviorState.WALK)
+        val walkState = if (currentEnvironment == EventEnvironment.NATIONAL_DAY) {
+            PetBehaviorState.FLAG_WALK
+        } else {
+            PetBehaviorState.WALK
+        }
+        setBehavior(walkState)
 
         val stepDelayMs = when {
             currentBatteryState.isCharging -> 15L

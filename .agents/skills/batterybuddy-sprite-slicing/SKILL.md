@@ -13,27 +13,29 @@ Use this skill to extract, remove solid black background, and normalize 2D chara
 
 ---
 
-## 1. Core Technical Specifications
+## 1. Absolute Golden Benchmark Standard: `pet_look_front_01.png`
 
-| Parameter | Value | Description |
+> [!IMPORTANT]
+> **TẤT CẢ SPRITE MÈO BẮT BUỘC PHẢI LẤY FILE `app/src/main/res/drawable-nodpi/pet_look_front_01.png` LÀM THƯỚC ĐO CHUẨN BẤT BIẾN ($1:1$)**:
+> - Mọi thao tác cắt ảnh, tính hệ số scale toàn cục $S$ bắt buộc phải đo đạc đối chiếu trực tiếp với các thông số thực tế của `pet_look_front_01.png`.
+
+| Thông Số Benchmark | Giá Trị Chuẩn (`pet_look_front_01.png`) | Ý Nghĩa Kỹ Thuật |
 | :--- | :--- | :--- |
-| **Canvas Dimensions** | $320 \times 320$ px (chuẩn) hoặc $384 \times 320$ px (tư thế duỗi dài) | Chiều cao luôn cố định $H = 320$ px |
-| **Color Format** | 32-bit RGBA PNG | Transparent background (Alpha channel) |
-| **Ground Baseline ($Y$)** | **$Y = 308$ px** | Distance from feet of grounded characters to bottom is $12$ px (`BOTTOM_MARGIN = 12`) |
-| **Head Width Diameter** | **$135 \text{ px} \pm 3 \text{ px}$** | Standard head width of Status Cat across all states (`IDLE`, `WALK`, `RUN`, `SIT`, `POUNCE`) |
-| **Eye Diameter** | **$123\text{px} - 128\text{px}$** | Blue pupil width across standard animations |
-| **Bell Diameter** | **$24\text{px} - 26\text{px}$** | Gold bell width on sky blue collar |
-| **Max Content Bound** | $296 \times 280$ px (trên canvas $320$) / $360 \times 280$ px (trên canvas $384$) | Minimum 12-20px safe padding on all 4 sides, zero clipping |
+| **Chiều cao đứng/ngồi chuẩn** | **$H_{\text{body}} = 288\text{px}$** (từ $Y=20$ đến $Y=307$) | Thước đo để tính $S = 288.0 / H_{\text{source}}$ |
+| **Đường kính đầu (Head Width)** | **$135\text{px} \pm 1\text{px}$** | Giữ tỷ lệ đầu to Chibi chuẩn xác |
+| **Đường kính mắt xanh (Eyes Span)**| **$95\text{px}$** | Khoảng cách 2 tròng mắt xanh |
+| **Đường kính chuông vàng (Bell)** | **$24\text{px} - 27\text{px}$** (trung bình $25\text{px}$) | Quả chuông vàng đeo cổ |
+| **Mặt đất chuẩn (Ground Baseline)** | **$Y = 308\text{px}$** (`BOTTOM_MARGIN = 12px`) | Điểm đặt chân cố định trên Status Bar |
+| **Kích thước Canvas** | $320 \times 320\text{px}$ (chuẩn) hoặc $384 \times 320\text{px}$ (tư thế duỗi rộng) | Chiều cao luôn cố định $H = 320\text{px}$ |
 
 ---
 
 ## 2. The 6 Golden Rules of Sprite Slicing
 
-### Rule 1: Calibrate Global Scale to Head & Standing Height (Không scale cục bộ, không dùng code scale)
-> [!IMPORTANT]
-> **Kích thước mèo phải chuẩn $1:1$ ngay từ bước xuất file PNG**:
-> - Hệ số scale toàn cục được tính dựa trên **Đường kính đầu ($135\text{px} \pm 3\text{px}$)** hoặc **Chiều cao ngồi/đứng chuẩn ($288\text{px}$)**.
-> - Tuyệt đối không dùng các hệ số scale nhân tay trong `PetView.kt` vì sẽ làm vỡ tỷ lệ khi chuyển trạng thái.
+### Rule 1: Calibrate Global Scale to Benchmark `pet_look_front_01.png`
+- **Kích thước mèo phải chuẩn $1:1$ ngay từ bước xuất file PNG**:
+  - Hệ số scale toàn cục $S$ được tính toán sao cho chiều cao thân mèo đạt đúng **$288\text{px}$** và đường kính đầu đạt đúng **$135\text{px}$** như file `pet_look_front_01.png`.
+  - Tuyệt đối không dùng các hệ số scale nhân tay trong `PetView.kt`.
 
 ### Rule 2: Ground Baseline Alignment (Căn chuẩn mặt đất)
 - For grounded frames (standing, walking, landing, crouching):

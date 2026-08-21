@@ -233,9 +233,25 @@ class OverlayService : Service() {
                         petAIController.forceButterfly()
                     }
                     ACTION_REFRESH_WEATHER -> refreshWeather(force = true)
-                    ACTION_TEST_EVENT -> intent.getStringExtra(EXTRA_EVENT)
-                        ?.let { name -> runCatching { EventEnvironment.valueOf(name) }.getOrNull() }
-                        ?.let(::applyEventEnvironment)
+                    ACTION_TEST_EVENT -> {
+                        petAIController.start(serviceScope)
+                        intent.getStringExtra(EXTRA_EVENT)
+                            ?.let { name -> runCatching { EventEnvironment.valueOf(name) }.getOrNull() }
+                            ?.let { env ->
+                                applyEventEnvironment(env)
+                                when (env) {
+                                    EventEnvironment.NATIONAL_DAY -> {
+                                        petAIController.forceBehavior(PetBehaviorState.FLAG_WAVE, 6000L)
+                                    }
+                                    EventEnvironment.QIXI -> {
+                                        petAIController.forceBehavior(PetBehaviorState.LOOK_FRONT, 4000L)
+                                    }
+                                    EventEnvironment.DEFAULT -> {
+                                        petAIController.forceBehavior(PetBehaviorState.IDLE, 3000L)
+                                    }
+                                }
+                            }
+                    }
                 }
             }
         }
@@ -331,6 +347,7 @@ class OverlayService : Service() {
 
     private fun applyEventEnvironment(environment: EventEnvironment) {
         eventEnvironmentView?.environment = environment
+        petAIController.currentEnvironment = environment
     }
 
     private suspend fun fetchAndApplyWeather(force: Boolean) {

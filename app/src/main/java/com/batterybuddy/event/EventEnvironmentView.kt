@@ -108,6 +108,8 @@ class EventEnvironmentView @JvmOverloads constructor(
         val density = resources.displayMetrics.density
         if (environment == EventEnvironment.QIXI) {
             drawQixiEnvironment(canvas, density)
+        } else if (environment == EventEnvironment.NATIONAL_DAY) {
+            drawNationalDayEnvironment(canvas, density)
         }
         drawWeather(canvas, density)
         if (isButterflyVisible) {
@@ -116,6 +118,191 @@ class EventEnvironmentView @JvmOverloads constructor(
         if (isLightningStriking) {
             drawLightningStrike(canvas, density)
         }
+    }
+
+    private val mausoleumBasePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#78909C")
+    }
+    private val mausoleumLightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#B0BEC5")
+    }
+    private val mausoleumDarkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#546E7A")
+    }
+    private val flagRedPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#D32F2F")
+    }
+    private val flagGoldPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#FFD700")
+    }
+    private val flagpolePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        color = Color.parseColor("#CFD8DC")
+    }
+    private val flagPath = Path()
+    private val starPath = Path()
+
+    private fun drawNationalDayEnvironment(canvas: Canvas, density: Float) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        if (w <= 0 || h <= 0) return
+
+        // Place Ba Dinh Square & Mausoleum centrally in background
+        val centerX = w * 0.5f
+        val groundY = h - 2f * density
+        val mausoleumH = (h * 0.58f).coerceAtMost(22f * density).coerceAtLeast(14f * density)
+        val mausoleumW = mausoleumH * 1.7f
+
+        drawBaDinhMausoleum(canvas, centerX, groundY, mausoleumW, mausoleumH, density)
+    }
+
+    private fun drawBaDinhMausoleum(
+        canvas: Canvas,
+        centerX: Float,
+        groundY: Float,
+        w: Float,
+        h: Float,
+        density: Float
+    ) {
+        val alpha = 110 // Soft elegant semi-transparency (~43%) so cat pops out
+        mausoleumBasePaint.alpha = alpha
+        mausoleumLightPaint.alpha = (alpha * 1.15f).toInt().coerceIn(0, 255)
+        mausoleumDarkPaint.alpha = (alpha * 0.9f).toInt().coerceIn(0, 255)
+
+        // 1. Plinth / Steps (3 tiered stepped base at the bottom)
+        val step1W = w * 1.12f
+        val step1H = h * 0.10f
+        val step1Y = groundY - step1H
+        canvas.drawRect(centerX - step1W / 2f, step1Y, centerX + step1W / 2f, groundY, mausoleumBasePaint)
+
+        val step2W = w * 1.04f
+        val step2H = h * 0.08f
+        val step2Y = step1Y - step2H
+        canvas.drawRect(centerX - step2W / 2f, step2Y, centerX + step2W / 2f, step1Y, mausoleumLightPaint)
+
+        val step3W = w * 0.96f
+        val step3H = h * 0.08f
+        val step3Y = step2Y - step3H
+        canvas.drawRect(centerX - step3W / 2f, step3Y, centerX + step3W / 2f, step2Y, mausoleumBasePaint)
+
+        // 2. Colonnade & Inner Wall (Hàng cột vuông đặc trưng)
+        val colonnadeH = h * 0.44f
+        val colonnadeY = step3Y - colonnadeH
+        val colonnadeW = w * 0.86f
+        // Inner recessed wall (darker)
+        canvas.drawRect(
+            centerX - colonnadeW / 2f,
+            colonnadeY,
+            centerX + colonnadeW / 2f,
+            step3Y,
+            mausoleumDarkPaint
+        )
+
+        // 6 Columns of the Mausoleum
+        val numColumns = 6
+        val columnW = colonnadeW * 0.09f
+        val spacing = (colonnadeW - numColumns * columnW) / (numColumns - 1)
+        var colX = centerX - colonnadeW / 2f
+        for (i in 0 until numColumns) {
+            canvas.drawRect(colX, colonnadeY, colX + columnW, step3Y, mausoleumLightPaint)
+            colX += columnW + spacing
+        }
+
+        // 3. Entablature & Stepped Roof (Mái Lăng Bác)
+        val beamH = h * 0.10f
+        val beamY = colonnadeY - beamH
+        val beamW = w * 0.94f
+        canvas.drawRect(centerX - beamW / 2f, beamY, centerX + beamW / 2f, colonnadeY, mausoleumLightPaint)
+
+        // Upper Roof tier 1
+        val roofTier1H = h * 0.12f
+        val roofTier1Y = beamY - roofTier1H
+        val roofTier1W = w * 0.84f
+        canvas.drawRect(centerX - roofTier1W / 2f, roofTier1Y, centerX + roofTier1W / 2f, beamY, mausoleumBasePaint)
+
+        // Upper Roof tier 2 (Top flat roof)
+        val roofTier2H = h * 0.08f
+        val roofTier2Y = roofTier1Y - roofTier2H
+        val roofTier2W = w * 0.72f
+        canvas.drawRect(centerX - roofTier2W / 2f, roofTier2Y, centerX + roofTier2W / 2f, roofTier1Y, mausoleumLightPaint)
+
+        // 4. Single National Flagpole on Ba Dinh Square (Left side of Mausoleum)
+        val flagpoleX = centerX - w * 0.65f
+        val flagpoleTopY = roofTier2Y - h * 0.25f
+        val flagW = 13f * density
+        val flagH = flagW * 0.65f
+
+        flagpolePaint.alpha = (alpha * 1.3f).toInt().coerceIn(0, 255)
+        flagpolePaint.strokeWidth = 1.2f * density
+        canvas.drawLine(flagpoleX, flagpoleTopY, flagpoleX, groundY, flagpolePaint)
+        flagGoldPaint.alpha = (alpha * 1.4f).toInt().coerceIn(0, 255)
+        canvas.drawCircle(flagpoleX, flagpoleTopY, 1.2f * density, flagGoldPaint)
+
+        // Single gentle waving flag attached to the top of flagpole
+        val wave = sin(animationProgress * 3.5f * Math.PI).toFloat()
+        drawStationaryFlag(canvas, flagpoleX, flagpoleTopY, flagW, flagH, wave, alpha, density)
+    }
+
+    private fun drawStationaryFlag(
+        canvas: Canvas,
+        x: Float,
+        y: Float,
+        flagWidth: Float,
+        flagHeight: Float,
+        wave: Float,
+        baseAlpha: Int,
+        density: Float
+    ) {
+        val alpha = (baseAlpha * 1.45f).toInt().coerceIn(0, 240)
+        flagRedPaint.alpha = alpha
+        flagGoldPaint.alpha = alpha
+
+        val waveAmplitude = 1.4f * density * wave
+
+        flagPath.reset()
+        flagPath.moveTo(x, y)
+        flagPath.cubicTo(
+            x + flagWidth * 0.35f, y + waveAmplitude,
+            x + flagWidth * 0.65f, y - waveAmplitude,
+            x + flagWidth, y + waveAmplitude * 0.4f
+        )
+        flagPath.lineTo(x + flagWidth, y + flagHeight + waveAmplitude * 0.4f)
+        flagPath.cubicTo(
+            x + flagWidth * 0.65f, y + flagHeight - waveAmplitude,
+            x + flagWidth * 0.35f, y + flagHeight + waveAmplitude,
+            x, y + flagHeight
+        )
+        flagPath.close()
+        canvas.drawPath(flagPath, flagRedPaint)
+
+        // Center Gold Star
+        val starCenterX = x + flagWidth * 0.45f
+        val starCenterY = y + flagHeight * 0.5f + waveAmplitude * 0.2f
+        val starSize = flagHeight * 0.32f
+        drawMiniStar(canvas, starCenterX, starCenterY, starSize, flagGoldPaint)
+    }
+
+    private fun drawMiniStar(canvas: Canvas, cx: Float, cy: Float, size: Float, paint: Paint) {
+        starPath.reset()
+        for (i in 0 until 5) {
+            val angleOuter = (i * 72 - 18) * Math.PI / 180.0
+            val xOuter = cx + (size * kotlin.math.cos(angleOuter)).toFloat()
+            val yOuter = cy + (size * kotlin.math.sin(angleOuter)).toFloat()
+            if (i == 0) starPath.moveTo(xOuter, yOuter) else starPath.lineTo(xOuter, yOuter)
+
+            val angleInner = ((i * 72) + 36 - 18) * Math.PI / 180.0
+            val xInner = cx + (size * 0.45f * kotlin.math.cos(angleInner)).toFloat()
+            val yInner = cy + (size * 0.45f * kotlin.math.sin(angleInner)).toFloat()
+            starPath.lineTo(xInner, yInner)
+        }
+        starPath.close()
+        canvas.drawPath(starPath, paint)
     }
 
     private fun drawQixiEnvironment(canvas: Canvas, density: Float) {

@@ -165,5 +165,27 @@ enum class PetBehaviorState(
         ),
         "?",
         "Puzzled and confused"
+    ),
+    FLAG_WAVE(
+        intArrayOf(
+            R.drawable.pet_flag_01,
+            R.drawable.pet_flag_02,
+            R.drawable.pet_flag_03,
+            R.drawable.pet_flag_04,
+            R.drawable.pet_flag_05,
+            R.drawable.pet_flag_06
+        ),
+        "🇻🇳",
+        "Waving national flag"
+    ),
+    FLAG_WALK(
+        intArrayOf(
+            R.drawable.pet_flag_walk_01,
+            R.drawable.pet_flag_walk_02,
+            R.drawable.pet_flag_walk_03,
+            R.drawable.pet_flag_walk_04
+        ),
+        "🇻🇳",
+        "Marching in national parade"
     )
 }
